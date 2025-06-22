@@ -11,7 +11,7 @@ export const loginSchema = z.object({
 export const registerSchema = z.object({
   username: z.string(),
   name: z.string(),
-  whatsapp: z.number().optional(),
+  whatsapp: z.number(),
   password: passwordSchema,
 });
 
@@ -20,6 +20,11 @@ export const updateUser = z.object({
   name: z.string(),
   whatsapp: z.number(),
 });
+
+export const updatePasswordSchema  =z.object({
+  oldPassword : passwordSchema,
+  newPassword : passwordSchema
+})
 export type loginAuth = z.infer<typeof loginSchema>;
 export type RegisterAuth = z.infer<typeof registerSchema>;
 export type UpdateUser = z.infer<typeof updateUser>;
