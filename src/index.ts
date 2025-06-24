@@ -8,7 +8,7 @@ import routes from "./route/index";
 const app = new Hono();
 
 // Environment variables
-const FRONTEND_URL = "http://a3a0-103-136-58-71.ngrok-free.app";
+const FRONTEND_URL = "http://localhost:3000";
 const NODE_ENV = "development";
 const PORT = parseInt("6000");
 
