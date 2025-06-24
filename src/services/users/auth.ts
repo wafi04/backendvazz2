@@ -3,15 +3,17 @@ import { prisma } from "../../lib/prisma";
 import { generateApiKey } from "../../utils/generate";
 import { registerSchema } from "../../validation/user";
 import { VerificationToken } from "./verificationToken";
-import { AuthResponse, RegisterInput,LoginInput,UserResponse } from "../../types/user";
-
-
+import {
+  AuthResponse,
+  RegisterInput,
+  LoginInput,
+  UserResponse,
+} from "../../types/user";
+import { authHelpers } from "../../middleware/auth";
 
 export class AuthService {
   private readonly JWT_SECRET: string;
-  constructor(
-    private readonly tokenService =  new VerificationToken()
-  ) {
+  constructor(private readonly tokenService = new VerificationToken()) {
     this.JWT_SECRET = process.env.JWT_SECRET || "";
     if (!this.JWT_SECRET) {
       throw new Error("JWT_SECRET environment variable is required");
@@ -23,9 +25,9 @@ export class AuthService {
    */
   async register(input: RegisterInput): Promise<AuthResponse> {
     const { name, username, whatsapp, password } = input;
-    const validate = registerSchema.safeParse({ 
-      ...input
-    })
+    const validate = registerSchema.safeParse({
+      ...input,
+    });
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
       where: { username },
@@ -41,9 +43,9 @@ export class AuthService {
     // Create user
     const user = await prisma.user.create({
       data: {
-        balance : 0,
-        lastPaymentAt : new Date(),
-        role : "member",
+        balance: 0,
+        lastPaymentAt: new Date(),
+        role: "member",
         name,
         username,
         password: hashedPassword,
@@ -162,7 +164,11 @@ export class AuthService {
   /**
    * Update user password
    */
-  async updatePassword(userId: number, oldPassword: string, newPassword: string): Promise<void> {
+  async updatePassword(
+    userId: number,
+    oldPassword: string,
+    newPassword: string
+  ): Promise<void> {
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: { password: true },
@@ -193,7 +199,7 @@ export class AuthService {
    */
   async regenerateApiKey(userId: number): Promise<string> {
     const newApiKey = generateApiKey();
-    
+
     await prisma.user.update({
       where: { id: userId },
       data: { apiKey: newApiKey },
@@ -205,9 +211,13 @@ export class AuthService {
   /**
    * Update user balance
    */
-  async updateBalance(username: string, amount: number, operation: 'add' | 'subtract'): Promise<number> {
+  async updateBalance(
+    username: string,
+    amount: number,
+    operation: "add" | "subtract"
+  ): Promise<number> {
     const user = await prisma.user.findUnique({
-      where: {username },
+      where: { username },
       select: { balance: true },
     });
 
@@ -215,16 +225,15 @@ export class AuthService {
       throw new Error("User not found");
     }
 
-    const newBalance = operation === 'add' 
-      ? user.balance + amount 
-      : user.balance - amount;
+    const newBalance =
+      operation === "add" ? user.balance + amount : user.balance - amount;
 
     if (newBalance < 0) {
       throw new Error("Insufficient balance");
     }
 
     const updatedUser = await prisma.user.update({
-      where: { username},
+      where: { username },
       data: { balance: newBalance },
       select: { balance: true },
     });
@@ -238,8 +247,8 @@ export class AuthService {
   async deactivateUser(userId: number): Promise<void> {
     await prisma.user.update({
       where: { id: userId },
-      data: { 
-        role: 'inactive',
+      data: {
+        role: "inactive",
         updatedAt: new Date(),
       },
     });

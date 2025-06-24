@@ -7,38 +7,37 @@ const NODE_ENV = process.env.NODE_ENV || "development";
 
 export const authMiddleware: MiddlewareHandler = async (c, next) => {
   try {
-    // Try cookie first, then Authorization header
     let token = getCookie(c, "auth_token");
-    
+
     if (!token) {
       const authHeader = c.req.header("Authorization");
       if (authHeader) {
         token = authHeader.replace("Bearer ", "");
       }
     }
-    
+
     if (!token) {
       throw new HTTPException(401, { message: "Token missing" });
     }
-    
+
     const jwtSecret = process.env.JWT_SECRET;
     if (!jwtSecret) {
       throw new HTTPException(500, { message: "JWT_SECRET not configured" });
     }
-    
+
     try {
       const payload = await verify(token, jwtSecret);
-      
+
       if (!payload.userId || !payload.username) {
         throw new HTTPException(401, { message: "Invalid token payload" });
       }
-      
+
       c.set("jwtPayload", {
         userId: payload.userId as number,
         username: payload.username as string,
         role: payload.role as string,
       });
-      
+
       await next();
     } catch (jwtError) {
       // Clear invalid cookie
@@ -49,7 +48,7 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
     if (error instanceof HTTPException) {
       throw error;
     }
-    
+
     console.error("Auth middleware error:", error);
     throw new HTTPException(500, { message: "Authentication failed" });
   }
@@ -57,16 +56,18 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
 
 // Optional: Admin-only middleware
 export const adminMiddleware: MiddlewareHandler = async (c, next) => {
-  const user = c.get("jwtPayload") as { userId: number; username: string; role: string };
-  
+  const user = c.get("jwtPayload") as {
+    userId: number;
+    username: string;
+    role: string;
+  };
+
   if (!user || user.role !== "admin") {
     throw new HTTPException(403, { message: "Admin access required" });
   }
-  
+
   await next();
 };
-
-
 
 export const authHelpers = {
   setAuthCookie: (c: any, token: string) => {
@@ -89,5 +90,5 @@ export const authHelpers = {
       secure: NODE_ENV === "production",
       sameSite: NODE_ENV === "production" ? "None" : "Lax",
     });
-  }
+  },
 };

@@ -8,34 +8,45 @@ import routes from "./route/index";
 const app = new Hono();
 
 // Environment variables
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:3000";
-const NODE_ENV = process.env.NODE_ENV || "development";
-const PORT = parseInt(process.env.PORT || "8080");
+const FRONTEND_URL = "http://a3a0-103-136-58-71.ngrok-free.app";
+const NODE_ENV = "development";
+const PORT = parseInt("6000");
+
 // Middleware
 app.use("*", logger());
 app.use("*", prettyJSON());
 
+// CORS Configuration - FIXED
 app.use(
   "*",
   cors({
     origin: (origin) => {
-      if (NODE_ENV === "development" && origin?.includes("localhost")) {
+      if (NODE_ENV === "development") {
+        if (
+          !origin ||
+          origin.includes("localhost") ||
+          origin.includes("127.0.0.1")
+        ) {
+          return origin || "*";
+        }
+      }
+
+      if (origin === FRONTEND_URL) {
         return origin;
       }
-      
-      // Production: strict origin checking
-      return FRONTEND_URL === origin ? origin : null;
+
+      return null;
     },
     credentials: true,
     allowHeaders: [
       "Origin",
-      "Content-Type", 
+      "Content-Type",
       "Accept",
       "Authorization",
       "X-Requested-With",
-      "Cookie"
+      "Cookie",
     ],
-    exposeHeaders: ["Set-Cookie"], 
+    exposeHeaders: ["Set-Cookie"],
     allowMethods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   })
 );
@@ -64,8 +75,6 @@ app.get("/health", async (c) => {
   }
 });
 
-
-
 // Root endpoint
 app.get("/", (c) => {
   return c.json({
@@ -75,8 +84,6 @@ app.get("/", (c) => {
     environment: NODE_ENV,
   });
 });
-
-
 
 // Graceful shutdown
 process.on("SIGINT", async () => {
@@ -92,10 +99,7 @@ process.on("SIGTERM", async () => {
   process.exit(0);
 });
 
-
-
-
 export default {
   port: PORT,
-  fetch: app.fetch
-}
+  fetch: app.fetch,
+};

@@ -7,7 +7,6 @@ import { FormSubCategory } from "../validation/category";
 const subCategory = new Hono();
 const subCategoryService = new SubCategoryService();
 
-// GET /categories - Get all categories
 subCategory.get("/", async (c) => {
   try {
     const categories = await subCategoryService.getAllSubCategories();
@@ -24,8 +23,7 @@ subCategory.get("/", async (c) => {
   }
 });
 
-// GET /categories/:id - Get subCategory by ID
-subCategory.get("/:id", async (c) => {
+subCategory.get("/:id/ids", async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     
@@ -61,7 +59,29 @@ subCategory.get("/:id", async (c) => {
   }
 });
 
-// POST /categories - Create new subCategory
+subCategory.get("/pagination", async (c) => {
+  try {
+
+    const {limit,page,status,search}   = c.req.query()
+    const subCategories = await subCategoryService.getSubCategoriesWithPagination({
+      limit,
+      page,
+      status,
+      search
+    })
+    return c.json({
+      success: true,
+      data: subCategories,
+      message: "Sub Categories retrieved successfully"
+    });
+  } catch (error) {
+    console.error("Get all subCategories error:", error);
+    throw new HTTPException(500, { 
+      message: "Failed to retrieve categories" 
+    });
+  }
+})
+
 subCategory.post(
   "/",
   validator("json", (value, c) => {
@@ -114,7 +134,6 @@ subCategory.post(
   }
 );
 
-// PUT /categories/:id - Update subCategory
 subCategory.put(
   "/:id",
   validator("json", (value, c) => {
@@ -184,7 +203,6 @@ subCategory.put(
   }
 );
 
-// DELETE /categories/:id - Delete subCategory
 subCategory.delete("/:id", async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
@@ -225,7 +243,7 @@ subCategory.delete("/:id", async (c) => {
   }
 });
 
-// // GET /categories/clear-cache - Clear cache (untuk testing/maintenance)
+// // // GET /categories/clear-cache - Clear cache (untuk testing/maintenance)
 // subCategory.post("/clear-cache", async (c) => {
 //   try {
 //     await subCategoryService.clearCache();

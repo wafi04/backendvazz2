@@ -1,3 +1,5 @@
+import { PaginationParams } from "../utils/pagination";
+
 export type SubCategory = {
   id: number;
   name: string;
@@ -7,3 +9,9 @@ export type SubCategory = {
   categoryId: number;
   isActive: string;
 };
+
+
+export type FilterSubCategories = PaginationParams &{
+  status?: string
+  search? : string
+}

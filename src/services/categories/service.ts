@@ -1,6 +1,10 @@
 import { prisma } from "../../lib/prisma";
 import { CacheService } from "../../lib/cache";
 import { FormValuesCategory } from "../../validation/category";
+import { Prisma } from "@prisma/client";
+import { FilterCategories, PaginatedResponse, PaginationUtil } from "../../utils/pagination";
+
+
 
 export class CategoryService {
   private cachePrefix = "category:";
@@ -20,6 +24,48 @@ export class CategoryService {
     
     return categories;
   }
+
+
+  async getCategoriesWithPagination(data: FilterCategories): Promise<PaginatedResponse<any>> {
+    // Setup pagination
+    const { skip, take, currentPage, itemsPerPage } = PaginationUtil.calculatePagination(
+      data.page, 
+      data.limit
+    )
+
+    // Setup filter
+    const filter: Prisma.CategoryWhereInput = {}
+    
+    if (data.status) {
+      filter.status = data.status
+    }
+    
+    if (data.search) {
+      filter.OR = [
+        { name: { contains: data.search, mode: 'insensitive' } },
+        { code: { contains: data.search, mode: 'insensitive' } }
+      ]
+    }
+
+    // Execute queries
+    const [categories, totalItems] = await Promise.all([
+      prisma.category.findMany({
+        where: filter,
+        skip,
+        take,
+        orderBy: { createdAt: 'desc' }
+      }),
+      prisma.category.count({ where: filter })
+    ])
+
+    return PaginationUtil.createPaginatedResponse(
+      categories,
+      currentPage,
+      itemsPerPage,
+      totalItems
+    )
+  }
+
 
   async getCategoryById(id: number) {
     const cacheKey = `${this.cachePrefix}${id}`;

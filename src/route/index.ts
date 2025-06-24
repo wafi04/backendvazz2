@@ -6,7 +6,7 @@ import subCategory from "./subCategoryRoute"
 const routes =  new Hono()
 routes.route("/auth",auth)
 routes.route("/category",category)
-routes.route("/subCategory",subCategory)
+routes.route("/subcategory",subCategory)
 
 
 export default routes

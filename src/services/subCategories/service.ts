@@ -1,6 +1,9 @@
+import { Prisma } from "@prisma/client";
 import { CacheService } from "../../lib/cache";
 import { prisma } from "../../lib/prisma";
+import { FilterSubCategories } from "../../types/subCategory";
 import { FormValuesSubCategory } from "../../validation/category";
+import { PaginatedResponse, PaginationUtil } from "../../utils/pagination";
 
 export class SubCategoryService {
   private cachePrefix = "subCategories:";
@@ -31,7 +34,46 @@ export class SubCategoryService {
     }
 
     return subCategory;
-}
+  }
+  async getSubCategoriesWithPagination(data: FilterSubCategories): Promise<PaginatedResponse<any>> {
+      // Setup pagination
+      const { skip, take, currentPage, itemsPerPage } = PaginationUtil.calculatePagination(
+        data.page, 
+        data.limit
+      )
+  
+      // Setup filter
+      const filter: Prisma.SubCategoryWhereInput = {}
+      
+      if (data.status) {
+        filter.isActive = data.status
+      }
+      
+      if (data.search) {
+        filter.OR = [
+          { name: { contains: data.search, mode: 'insensitive' } },
+          { code: { contains: data.search, mode: 'insensitive' } }
+        ]
+      }
+  
+      // Execute queries
+      const [categories, totalItems] = await Promise.all([
+        prisma.subCategory.findMany({
+          where: filter,
+          skip,
+          take,
+        }),
+        prisma.subCategory.count({ where: filter })
+      ])
+  
+      return PaginationUtil.createPaginatedResponse(
+        categories,
+        currentPage,
+        itemsPerPage,
+        totalItems
+      )
+    }
+  
 
   async createSubCategory(data : FormValuesSubCategory) {
     const subCategory = await prisma.subCategory.create({

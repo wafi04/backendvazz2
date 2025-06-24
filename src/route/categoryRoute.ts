@@ -25,7 +25,7 @@ category.get("/", async (c) => {
 });
 
 // GET /categories/:id - Get category by ID
-category.get("/:id", async (c) => {
+category.get("/:id/ids", async (c) => {
   try {
     const id = parseInt(c.req.param("id"));
     
@@ -45,7 +45,7 @@ category.get("/:id", async (c) => {
 
     return c.json({
       success: true,
-      data: categoryData,
+      categories: categoryData,
       message: "Category retrieved successfully"
     });
   } catch (error) {
@@ -60,6 +60,29 @@ category.get("/:id", async (c) => {
     });
   }
 });
+
+category.get("/pagination", async (c) => {
+  try {
+
+    const {limit,page,status,search}   = c.req.query()
+    const categories = await categoryService.getCategoriesWithPagination({
+      limit,
+      page,
+      status,
+      search
+    })
+    return c.json({
+      success: true,
+      data: categories,
+      message: "Categories retrieved successfully"
+    });
+  } catch (error) {
+    console.error("Get all categories error:", error);
+    throw new HTTPException(500, { 
+      message: "Failed to retrieve categories" 
+    });
+  }
+})
 
 // POST /categories - Create new category
 category.post(
