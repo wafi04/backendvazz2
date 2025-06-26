@@ -62,6 +62,8 @@ export const adminMiddleware: MiddlewareHandler = async (c, next) => {
     role: string;
   };
 
+  console.log(user)
+
   if (!user || user.role !== "admin") {
     throw new HTTPException(403, { message: "Admin access required" });
   }

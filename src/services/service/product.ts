@@ -63,6 +63,111 @@ export class ProductService {
         return products;
     }
 
+
+async getServiceByCategory(categoryId: string, subCategoryId?: string, role?: string) {
+    const cacheKey = `${this.cachePrefix}category:${categoryId}${subCategoryId ? `:sub:${subCategoryId}` : ''}${role ? `:role:${role}` : ''}`;
+    const cached = await CacheService.get(cacheKey);
+    if (cached) {
+        return cached;
+    }
+
+    const where: Prisma.ServiceWhereInput = { 
+        categoryId: Number(categoryId),
+        status: 'active'
+    };
+    
+    if (subCategoryId) {
+        where.subCategoryId = Number(subCategoryId);
+    }
+
+    const services = await prisma.service.findMany({
+        where,
+        select: {
+            priceFlashSale: true,
+            expiredFlashSale: true,
+            isFlashSale: true,
+            isSuggest: true,
+            price: true,
+            priceSuggest: true,
+            pricePlatinum: true,
+            priceReseller: true,
+            serviceName: true,
+            productLogo: true,
+            note: true,
+            providerId : true
+        },
+        orderBy: { serviceName: 'asc' }
+    });
+
+    // Separate flash sale and regular services
+    const flashSaleServices = [] as any[];
+    const regularServices = [] as any[]
+
+    const transformedServices = services.map(service => {
+        let currentPrice = service.price;
+        const now = new Date();
+        const isFlashSaleActive = service.isFlashSale === 'active' && 
+                                 service.priceFlashSale && 
+                                 service.expiredFlashSale && 
+                                 now <= new Date(service.expiredFlashSale);
+        
+        // Determine price based on role (suggest tidak mengubah price)
+        switch (role?.toLowerCase()) {
+            case 'reseller':
+                currentPrice = service.priceReseller;
+                break;
+            case 'platinum':
+                currentPrice = service.pricePlatinum;
+                break;
+            default:
+                if (isFlashSaleActive) {
+                    currentPrice = service.priceFlashSale  ?? 0
+                }
+                break;
+        }
+
+        const transformedService = {
+            ...service,
+            currentPrice,
+            originalPrice: service.price,
+            priceInfo: {
+                role: role || 'default',
+                isFlashSale: isFlashSaleActive,
+                flashSaleExpired: service.expiredFlashSale
+            },
+            suggestInfo: null as { suggestPrice: number;   } | null
+        };
+
+
+        if (service.isSuggest === 'true') {
+            transformedService.suggestInfo = {
+                suggestPrice: service.priceSuggest,
+            };
+        }
+
+        return transformedService;
+    });
+
+    // Separate services by flash sale status
+    transformedServices.forEach(service => {
+        if (service.priceInfo.isFlashSale) {
+            flashSaleServices.push(service);
+        } else {
+            regularServices.push(service);
+        }
+    });
+
+    const result = {
+        flashSaleServices,
+        regularServices,
+        totalServices: transformedServices.length,
+        hasFlashSale: flashSaleServices.length > 0,
+        role: role || 'default'
+    };
+
+    await CacheService.set(cacheKey, result, this.cacheExpiration);
+    return result;
+}
     async createProduct(data: ServiceFormData) {
         // Ensure required fields are present
         const { priceFromDigi, profitSuggest, ...rest } = data as any;
@@ -70,7 +175,7 @@ export class ProductService {
             data: {
                 ...rest,
                 priceFromDigi: priceFromDigi ?? 0, 
-                profitSuggest: profitSuggest ?? 0, // Provide a default if undefined
+                profitSuggest: profitSuggest ?? 0, 
             },
         });
         

@@ -37,12 +37,16 @@ export class PaymentMethodService {
     return paymentMethod;
   }
 
-  async getPaymentMethods() {
+  async getPaymentMethods(status : string) {
     const cached = await CacheService.get(this.allMethods);
     if (cached) {
       return cached;
     }
-    const paymentMethods = await prisma.paymentMethod.findMany();
+    const paymentMethods = await prisma.paymentMethod.findMany({
+      where: {
+      isActive : status
+    }
+    });
     await CacheService.set(
       this.allMethods,
       paymentMethods,

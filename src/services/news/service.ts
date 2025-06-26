@@ -23,7 +23,7 @@ export class News {
     return news;
   }
 
-  async getPaymentNews() {
+  async getNews() {
     const cached = await CacheService.get(this.allNews);
     if (cached) {
       return cached;

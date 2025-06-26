@@ -1,8 +1,0 @@
-export enum TRANSACTION_FLOW {
-    PENDING = "PENDING",
-    PAID = "PAID",
-    PROCESS = "PROCESS",
-    SUCCESS = "SUCCESS",
-    FAILED = "FAILED",
-}
-  

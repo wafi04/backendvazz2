@@ -9,7 +9,6 @@ import {
   LoginInput,
   UserResponse,
 } from "../../types/user";
-import { authHelpers } from "../../middleware/auth";
 
 export class AuthService {
   private readonly JWT_SECRET: string;
@@ -40,7 +39,6 @@ export class AuthService {
     // Hash password
     const hashedPassword = hashSync(password, 10);
 
-    // Create user
     const user = await prisma.user.create({
       data: {
         balance: 0,
@@ -152,6 +150,7 @@ export class AuthService {
         id: true,
         name: true,
         username: true,
+        whatsapp : true,
         createdAt: true,
         balance: true,
         role: true,

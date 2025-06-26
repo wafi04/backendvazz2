@@ -83,7 +83,7 @@ model Category {
 model Service {
   id            Int    @id @default(autoincrement()) @map("id")
   categoryId    Int    @map("category_id")
-  subCategoryId Int    @default(1) @map("sub_category_id")
+  subCategoryId Int?    @map("sub_category_id")
   providerId    String @map("provider_id") @db.VarChar(100)
   serviceName   String @map("service_name") @db.VarChar(300)
 
@@ -115,7 +115,7 @@ model Service {
   updatedAt DateTime? @updatedAt @map("updated_at")
 
   category    Category    @relation(fields: [categoryId], references: [id])
-  subCategory SubCategory @relation(fields: [subCategoryId], references: [id])
+  subCategory SubCategory? @relation(fields: [subCategoryId], references: [id])
 
   // Highly optimized indexes for product queries
   @@index([categoryId, status, price])
@@ -245,6 +245,8 @@ model ManualTransaction {
   @@index([orderId, status])
   @@index([userId, status])
   @@index([createdBy, status])
+
+  @@map("manual_transaction")
 }
 
 model Membership {

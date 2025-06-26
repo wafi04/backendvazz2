@@ -34,15 +34,11 @@ export const createVoucherSchema = z.object({
     .default(0),
   // Sesuaikan dengan schema Prisma yang menggunakan String
   isForAllCategories: z
-    .boolean()
-    .transform((val) => (val ? "active" : "inactive"))
-    .or(z.enum(["active", "inactive"]))
+    .string()
     .default("inactive"),
   // Sesuaikan dengan schema Prisma yang menggunakan String
   isActive: z
-    .boolean()
-    .transform((val) => (val ? "active" : "inactive"))
-    .or(z.enum(["active", "inactive"]))
+    .string()
     .default("active"),
   startDate: z
     .string()
@@ -77,7 +73,16 @@ export const validateVoucherSchema = z.object({
   categoryId: z.number().int().positive().optional(),
 });
 
+export const useVoucherSchema = z.object({
+  voucherId: z.number().positive(),
+  orderId: z.string().min(1, 'Order ID is required'),
+  amount: z.number().positive(),
+  username: z.string().optional(),
+  whatsapp: z.string().optional(),
+});
+
 // Type definitions based on Zod schemas
 export type VoucherValidation = z.infer<typeof createVoucherSchema>;
 export type UpdateVoucherValidation = z.infer<typeof updateVoucherSchema>;
 export type ValidateVoucherInput = z.infer<typeof validateVoucherSchema>;
+

@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { validator } from "hono/validator";
 import { HTTPException } from "hono/http-exception";
-import { FormCategory, FormValuesCategory } from "../validation/category"; // sesuaikan path
+import { FormCategory} from "../validation/category"; // sesuaikan path
 import { CategoryService } from "../services/categories/service";
 
 const category = new Hono();
@@ -23,6 +23,39 @@ category.get("/", async (c) => {
     });
   }
 });
+
+category.get("/type/:type", async (c) => {
+  try {
+    const categories = await categoryService.getAllCategoriesByType(c.req.param("type"));
+    return c.json({
+      success: true,
+      data: categories,
+      message: "Categories retrieved successfully"
+    });
+  } catch (error) {
+    console.error("Get all categories error:", error);
+    throw new HTTPException(500, { 
+      message: "Failed to retrieve categories" 
+    });
+  }
+});
+
+category.get("/code/:code", async (c) => {
+  try {
+    const categories = await categoryService.getAllCategoriesByCode(c.req.param("code"));
+    return c.json({
+      success: true,
+      data: categories,
+      message: "Categories retrieved successfully"
+    });
+  } catch (error) {
+    console.error("Get all categories error:", error);
+    throw new HTTPException(500, { 
+      message: "Failed to retrieve categories" 
+    });
+  }
+});
+
 
 // GET /categories/:id - Get category by ID
 category.get("/:id/ids", async (c) => {
@@ -248,7 +281,7 @@ category.delete("/:id", async (c) => {
   }
 });
 
-// // GET /categories/clear-cache - Clear cache (untuk testing/maintenance)
+// GET /categories/clear-cache - Clear cache (untuk testing/maintenance)
 // category.post("/clear-cache", async (c) => {
 //   try {
 //     await categoryService.clearCache();

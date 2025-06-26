@@ -1,15 +1,41 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { CacheService } from "../../lib/cache";
 import {
   VoucherValidation,
   ValidateVoucherInput,
 } from "../../validation/voucher";
+import { PaginationUtil } from "../../utils/pagination";
 
 export class Voucher {
   private cachePrefix = "vouchers:";
   private allVouchersKey = "vouchers:all";
   private cacheExpiration = 3600;
+  
   constructor() {}
+
+  // Helper method to generate cache keys
+  private getCacheKey(id: number | string, suffix?: string): string {
+    return `${this.cachePrefix}${id}${suffix ? `:${suffix}` : ''}`;
+  }
+
+  // Helper method to invalidate related caches
+  private async invalidateVoucherCaches(id?: number): Promise<void> {
+    const keysToDelete: string[] = [this.allVouchersKey];
+    
+    if (id) {
+      keysToDelete.push(
+        this.getCacheKey(id),
+        this.getCacheKey(id, 'with_usages')
+      );
+    }
+
+    // Also clear any filtered cache results
+    const filterKeys = await CacheService.keys(`${this.cachePrefix}filters:*`);
+    keysToDelete.push(...filterKeys);
+
+    await CacheService.del(keysToDelete);
+  }
 
   async create(data: VoucherValidation) {
     const { categoryIds, ...voucherData } = data;
@@ -35,6 +61,9 @@ export class Voucher {
         },
       },
     });
+
+    // Invalidate caches
+    await this.invalidateVoucherCaches();
 
     return req;
   }
@@ -65,10 +94,21 @@ export class Voucher {
       },
     });
 
+    // Invalidate caches
+    await this.invalidateVoucherCaches(id);
+
     return req;
   }
 
   async findById(id: number) {
+    const cacheKey = this.getCacheKey(id);
+    
+    // Try to get from cache first
+    const cached = await CacheService.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const voucher = await prisma.voucher.findUnique({
       where: { id },
       include: {
@@ -86,10 +126,23 @@ export class Voucher {
       },
     });
 
+    // Cache the result if found
+    if (voucher) {
+      await CacheService.set(cacheKey, voucher, this.cacheExpiration);
+    }
+
     return voucher;
   }
 
   async findByCode(code: string) {
+    const cacheKey = this.getCacheKey(`code:${code}`);
+    
+    // Try to get from cache first
+    const cached = await CacheService.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
     const voucher = await prisma.voucher.findUnique({
       where: { code },
       include: {
@@ -100,6 +153,11 @@ export class Voucher {
         },
       },
     });
+
+    // Cache the result if found
+    if (voucher) {
+      await CacheService.set(cacheKey, voucher, this.cacheExpiration);
+    }
 
     return voucher;
   }
@@ -118,6 +176,28 @@ export class Voucher {
       page = 1,
       limit = 10,
     } = filters || {};
+
+    // Create cache key based on filters
+    const filterString = JSON.stringify({
+      isActive,
+      discountType,
+      search,
+      page,
+      limit,
+    });
+    const cacheKey = `${this.cachePrefix}filters:${Buffer.from(filterString).toString('base64')}`;
+
+     const { skip, take, currentPage, itemsPerPage } = PaginationUtil.calculatePagination(
+            page.toString(), 
+            limit.toString()
+      )
+      
+
+    // Try to get from cache first
+    const cached = await CacheService.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
 
     const where: Prisma.VoucherWhereInput = {};
 
@@ -160,22 +240,26 @@ export class Voucher {
       prisma.voucher.count({ where }),
     ]);
 
-    return {
-      data: vouchers,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+     const result = PaginationUtil.createPaginatedResponse(
+        vouchers,
+        currentPage,
+        itemsPerPage,
+        total
+      )
+
+    // Cache the result
+    await CacheService.set(cacheKey, result, this.cacheExpiration);
+
+    return result;
   }
 
   async validateVoucher(input: ValidateVoucherInput) {
     const { code, amount, categoryId } = input;
 
-    // Find voucher by code
-    const voucher = await this.findByCode(code);
+    // Find voucher by code (this will use cache)
+    const voucher = await this.findByCode(code) as Prisma.VoucherGetPayload<{
+      include: { categories: { include: { category: true } } }
+    }>;
 
     if (!voucher) {
       throw new Error("Voucher not found");
@@ -262,6 +346,9 @@ export class Voucher {
       },
     });
 
+    // Invalidate caches since usage count changed
+    await this.invalidateVoucherCaches(voucherId);
+
     return usage;
   }
 
@@ -270,6 +357,17 @@ export class Voucher {
       where: { id },
     });
 
+    // Invalidate caches
+    await this.invalidateVoucherCaches(id);
+
     return req;
+  }
+
+  // Additional method to manually clear all voucher caches
+  async clearAllCaches(): Promise<void> {
+    const keys = await CacheService.keys(`${this.cachePrefix}*`);
+    if (keys.length > 0) {
+      await CacheService.del(keys);
+    }
   }
 }

@@ -5,9 +5,12 @@ import { authMiddleware } from "../middleware/auth";
 import { createErrorResponse } from "../utils/response";
 import { ProductService } from "../services/service/product";
 import { ServiceSchema } from "../validation/service";
+import { AuthService } from "../services/users/auth";
+import { success } from "zod/v4";
 
 const productRoutes = new Hono();
 const productService = new ProductService();
+const authService = new AuthService()
 
 // GET /api/products - Get all products
 productRoutes.get("/", async (c) => {
@@ -25,6 +28,47 @@ productRoutes.get("/", async (c) => {
   }
 });
 
+
+productRoutes.get("/category/:categoryId/:subCategoryId?", async (c) => {
+  try {
+    // Ambil dari params, bukan query
+    const categoryId = c.req.param("categoryId");
+    const subCategoryId = c.req.param("subCategoryId");
+    
+    if (!categoryId) {
+      throw new HTTPException(400, { message: "Category ID is required" });
+    }
+    
+    let userRole = 'member'; // default role untuk user yang belum login
+    
+    try {
+      const user = c.get("jwtPayload") as { role: string };
+      if (user && user.role) {
+        userRole = user.role;
+      }
+    } catch (error) {
+      // User tidak login atau token invalid, gunakan default role
+      userRole = 'member';
+    }
+    
+    const services = await productService.getServiceByCategory(
+      categoryId,
+      subCategoryId,
+      userRole
+    );
+    
+    return c.json({
+      success: true,
+      data: services,
+      message: "Products fetched successfully"
+    });
+
+  } catch (error) {
+    console.error("Get products by category error:", error);
+    if (error instanceof HTTPException) throw error;
+    throw new HTTPException(500, { message: "Failed to fetch products by category" });
+  }
+});
 
 // GET /api/products/code/:code - Get product by provider code
 productRoutes.get("/code/:code", async (c) => {

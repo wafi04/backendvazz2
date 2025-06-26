@@ -10,13 +10,12 @@ const app = new Hono();
 // Environment variables
 const FRONTEND_URL = "http://localhost:3000";
 const NODE_ENV = "development";
-const PORT = parseInt("6000");
+const PORT = parseInt("3002");
 
 // Middleware
 app.use("*", logger());
 app.use("*", prettyJSON());
 
-// CORS Configuration - FIXED
 app.use(
   "*",
   cors({

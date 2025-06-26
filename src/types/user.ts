@@ -9,7 +9,7 @@ export type User = {
   otp: string | null;
   createdAt: string | null;
   updatedAt: string | null;
-    lastPaymentAt: string | null;
+  lastPaymentAt: string | null;
 
 };
 
@@ -29,6 +29,7 @@ export interface UserResponse {
   id: number;
   name: string;
   username: string;
+  whatsapp?: string | null
   createdAt: Date;
   balance?: number;
   role: string;

@@ -35,6 +35,8 @@ export class SubCategoryService {
 
     return subCategory;
   }
+
+
   async getSubCategoriesWithPagination(data: FilterSubCategories): Promise<PaginatedResponse<any>> {
       // Setup pagination
       const { skip, take, currentPage, itemsPerPage } = PaginationUtil.calculatePagination(

@@ -4,8 +4,6 @@ import { FormValuesCategory } from "../../validation/category";
 import { Prisma } from "@prisma/client";
 import { FilterCategories, PaginatedResponse, PaginationUtil } from "../../utils/pagination";
 
-
-
 export class CategoryService {
   private cachePrefix = "category:";
   private allCategoriesKey = "categories:all";
@@ -43,7 +41,8 @@ export class CategoryService {
     if (data.search) {
       filter.OR = [
         { name: { contains: data.search, mode: 'insensitive' } },
-        { code: { contains: data.search, mode: 'insensitive' } }
+        { code: { contains: data.search, mode: 'insensitive' } },
+        { type: { contains: data.search, mode: 'insensitive' } },
       ]
     }
 
@@ -86,6 +85,58 @@ export class CategoryService {
     return category;
   }
 
+  async getAllCategoriesByType(type: string) {
+      const cacheKey = `categories:all:${type}`;
+      
+      // Check Redis cache first
+      const cached = await CacheService.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const filter: Prisma.CategoryWhereInput = {
+        status: 'active',
+        type: type 
+      }
+
+      const categories = await prisma.category.findMany({
+        where: filter,
+        orderBy: { createdAt: 'desc' }
+      });
+
+      // Cache for 10 minutes
+      await CacheService.set(cacheKey, categories, 600);
+      
+      return categories;
+  }
+  
+    async getAllCategoriesByCode(code: string) {
+      const cacheKey = `categories:all:${code}`;
+      
+      // Check Redis cache first
+      const cached = await CacheService.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
+      const filter: Prisma.CategoryWhereInput = {
+        status: 'active',
+        code
+      }
+
+      const categories = await prisma.category.findFirst({
+        where: filter,
+        include: {
+          subCategories : true
+        },
+        orderBy: { createdAt: 'desc' }
+      });
+
+      // Cache for 10 minutes
+      await CacheService.set(cacheKey, categories, 600);
+      
+      return categories;
+}
   async createCategory(data: FormValuesCategory) {
     const category = await prisma.category.create({
       data: { ...data },

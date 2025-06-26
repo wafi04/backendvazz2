@@ -88,9 +88,15 @@ authRoutes.get("/me", authMiddleware, async (c) => {
     const user = c.get("jwtPayload") as { userId: number };
     const userData = await authService.getUserProfile(user.userId);
 
+    if (!userData) {
+      throw new HTTPException(401, { message: "UNAUTHENTICATED" });
+    }
+
     return c.json({
       success: true,
-      user: userData,
+      message: "User profile retrieved successfully",
+      status : true,
+      data: userData
     });
   } catch (error) {
     console.error("Get profile error:", error);
