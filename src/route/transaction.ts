@@ -3,6 +3,7 @@ import { GetServices } from "../services/transaction/getServices";
 import { TransactionFilters, TransactionService } from "../services/transaction/transaction";
 import { adminMiddleware, authMiddleware } from "../middleware/auth";
 import { ManualTransactions } from "../services/manual-transactions/server";
+import { OrderTransactions } from "../services/transaction/order";
 
 const transaction = new Hono()
 // order 
@@ -89,20 +90,6 @@ transaction.get("/:orderId", async (c) => {
 transaction.post("/retransactions", authMiddleware, adminMiddleware, async (c) => {
     try {
         const req = await c.req.json();
-            const {  orderId,
-            createdBy,
-            reason,
-            whatsapp,
-            userId,
-            nickname,
-            zone,
-            productCode,
-            productName,
-            price,
-            profit,
-                profitAmount
-            } = req
-        
         const result = await manualTransactons.Create(req)
         return c.json({
             success: true,
@@ -111,6 +98,25 @@ transaction.post("/retransactions", authMiddleware, adminMiddleware, async (c) =
         });
     } catch (error) {
         console.error("Route error:", error);
+        return c.json({
+            success: true,
+            message: "Transaction failed successfully",
+        });
+    }
+})
+
+
+transaction.post("/order",async(c)   => {
+    try {
+        const req = await c.req.json()
+        const result = await OrderTransactions(req)
+        return c.json({
+            success : true,
+            message : "Transaction Created Successfully",
+            data : result
+        })
+    } catch (error) {
+           console.error("Route error:", error);
         return c.json({
             success: true,
             message: "Transaction failed successfully",

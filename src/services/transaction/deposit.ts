@@ -1,5 +1,5 @@
 import { DUITKU_API_KEY, DUITKU_MERCHANT_CODE } from "../../constants";
-import { Duitku } from "../../lib/duitku";
+import { DuitkuService } from "../../lib/duitku";
 import { prisma } from "../../lib/prisma";
 import { GenerateRandomId } from "../../utils/generate";
 import { getWIBTime } from "../../utils/time";
@@ -60,7 +60,7 @@ export async function Deposit(data: CreateDeposit) {
       feeAmount =  Math.ceil((amount * 0.7 ) / 100)
     }
 
-    const duitku = new Duitku(
+    const duitku = new DuitkuService(
       DUITKU_API_KEY as string,
       DUITKU_MERCHANT_CODE as string
     );

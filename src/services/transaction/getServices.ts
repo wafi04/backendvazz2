@@ -68,7 +68,7 @@ export async function GetServices(c: Context) {
                     code: matchedProvider,
                     categoryId: category.id,
                 },
-});
+              });
             const isFixed = item.category === "Voucher" || item.category === "PLN";
             const priceModal = item.price;
             const defaultProfit = {
@@ -89,6 +89,7 @@ export async function GetServices(c: Context) {
               await tx.service.update({
                 where: { id: existing.id },
                 data: {
+                  subCategoryId : subCategory?.id,
                   price: regular,
                   priceFromDigi: priceModal,
                   priceReseller: reseller,

@@ -7,7 +7,7 @@ import {
 } from "../../validation/voucher";
 import { PaginationUtil } from "../../utils/pagination";
 
-export class Voucher {
+export class VoucherService {
   private cachePrefix = "vouchers:";
   private allVouchersKey = "vouchers:all";
   private cacheExpiration = 3600;
@@ -256,7 +256,6 @@ export class Voucher {
   async validateVoucher(input: ValidateVoucherInput) {
     const { code, amount, categoryId } = input;
 
-    // Find voucher by code (this will use cache)
     const voucher = await this.findByCode(code) as Prisma.VoucherGetPayload<{
       include: { categories: { include: { category: true } } }
     }>;
@@ -291,7 +290,7 @@ export class Voucher {
     }
 
     // Check category restriction
-    if (voucher.isForAllCategories !== "true" && categoryId) {
+    if (voucher.isForAllCategories !== "active" && categoryId) {
       const isValidCategory = voucher.categories.some(
         (vc) => vc.categoryId === categoryId
       );

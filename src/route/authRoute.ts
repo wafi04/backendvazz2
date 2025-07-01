@@ -36,7 +36,6 @@ authRoutes.post(
         201
       );
     } catch (error) {
-      console.error("Registration error:", error);
       const message =
         error instanceof Error ? error.message : "Registration failed";
 
@@ -62,17 +61,25 @@ authRoutes.post(
       const input = c.req.valid("json");
       const result = await authService.login(input);
 
+      if(!result.user){
+        return  c.json({
+        success: false,
+        message: "Login failed",
+        user: result.user,
+      })
+      }
+
       // Set authentication cookie
       authHelpers.setAuthCookie(c, result.token!);
 
       return c.json({
         success: true,
         message: "Login successful",
-        user: result.user,
+        data: result.user,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Login failed";
-
+      console.log(error)
       if (message === "Invalid credentials") {
         throw new HTTPException(401, { message });
       }

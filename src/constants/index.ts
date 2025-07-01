@@ -5,6 +5,8 @@ export enum TRANSACTION_FLOW {
     SUCCESS = "SUCCESS",
     FAILED = "FAILED",
 }
+export const BASE_URL = `http://localhost:3002/api/v1`
+export const FRONTEND_URL = `http://localhost:3000`
 export const DIGI_USERNAME = process.env.DIGI_USERNAME as string;
 export const DIGI_KEY = process.env.DIGI_API_KEY as string;
 export type TYPE_TRANSACTION = "TOPUP" | "MEMBERSHIP" | "DEPOSIT";

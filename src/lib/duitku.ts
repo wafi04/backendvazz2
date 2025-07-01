@@ -27,7 +27,7 @@ export type ResponseFromDuitkuCheckTransaction = {
   };
 };
 
-export class Duitku {
+export class DuitkuService {
   private DUITKU_KEY: string;
   private DUITKU_MERCHANT_CODE: string;
   private DUITKU_EXPIRY_PERIOD?: number;

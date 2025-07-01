@@ -2,10 +2,10 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { validator } from 'hono/validator';
 import { VoucherValidation, ValidateVoucherInput, createVoucherSchema, updateVoucherSchema, validateVoucherSchema, useVoucherSchema } from '../validation/voucher';
-import { Voucher } from '../services/voucher/voucher';
+import { VoucherService } from '../services/voucher/voucher';
 
 const app = new Hono();
-const voucherService = new Voucher();
+const voucherService = new VoucherService();
 
 app.get('/', async (c) => {
   try {
