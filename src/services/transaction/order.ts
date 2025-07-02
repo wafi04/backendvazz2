@@ -1,5 +1,6 @@
 import { BASE_URL, DUITKU_API_KEY, DUITKU_MERCHANT_CODE, FRONTEND_URL, TRANSACTION_FLOW } from "../../constants"
 import { DuitkuService } from "../../lib/duitku"
+import { TransactionLogger } from "../../lib/logger"
 import { prisma } from "../../lib/prisma"
 import { ServiceData } from "../../types/service"
 import { UserResponse } from "../../types/user"
@@ -10,7 +11,7 @@ import { AuthService } from "../users/auth"
 import { VoucherService } from "../voucher/voucher"
 import { PaymentUsingSaldo } from "./paymentUsingSaldo"
 
-interface CreateOrderTransation {
+interface CreateOrderTransaction {
     productCode: string
     methodCode: string
     gameId: string
@@ -20,206 +21,291 @@ interface CreateOrderTransation {
     nickname: string
     username?: string
 }
-export async function OrderTransactions(data: CreateOrderTransation) {
-    const { gameId, methodCode, nickname, productCode, whatsAppNumber, voucherCode, zone, username } = data
 
+interface TransactionResult {
+    status: boolean
+    message: string
+    code: number
+    data?: any
+    error?: string
+}
+
+export async function OrderTransactions(data: CreateOrderTransaction): Promise<TransactionResult> {
+    const { gameId, methodCode, nickname, productCode, whatsAppNumber, voucherCode, zone, username } = data
+  
+    const logger = new TransactionLogger();
+    const orderId = GenerateRandomId("VAZZ");
     const userService = new AuthService()
     const voucherService = new VoucherService()
     const duitku = new DuitkuService(DUITKU_API_KEY as string, DUITKU_MERCHANT_CODE as string)
-    let user: UserResponse | null = null
     
-    if (username) {
-        user = await userService.getUserByUsername(username)
-    }
+    let user: UserResponse | null = null
 
-    return await prisma.$transaction(
-        async (tx) => {
-            const product = await tx.service.findFirst({
-                where: {
-                    providerId: productCode,
-                },
-            });
+    try {
+        // Log transaction start
+        await logger.logTransaction({
+            orderId,
+            transactionType: 'CREATE',
+            status: 'STARTED',
+            userId: gameId,
+            productCode,
+            paymentMethod: methodCode,
+            data: { ...data, orderId },
+            timestamp: new Date(),
+        });
 
-            if (!product) {
-                throw new Error("Product Not Found")
-            }
+        // Get user if username provided
+        if (username) {
+            user = await userService.getUserByUsername(username)
+        }
 
-            const calculatePricing = CalculatePricingWithProfitLogic(
-                product as ServiceData,
-                user?.role
-            );                
-            
-            let priceAmount: number = Math.round(calculatePricing.price);
-            let totalAmount: number = calculatePricing.price;
-            let fee: number | null;
-            let feeRupiah: number | null;
-            let discountAmount = 0;
-            let profitAmount: number = calculatePricing.profitRupiah;
-
-            const orderId = GenerateRandomId("VAZZ")
-            
-            // Handle voucher validation
-            if(voucherCode){
-                const validated = await voucherService.validateVoucher(
-                    {
-                        amount : priceAmount,
-                        code : voucherCode,
-                        categoryId : product.categoryId,
-                        orderId,
-                        username : user?.username,
-                        whatsapp : user?.whatsapp as string,
-                    }
-                )
-
-                if (!validated){
-                    throw new Error("failed to validated voucher")
-                }
-
-                await voucherService.useVoucher(
-                    validated.voucher.id,
-                    orderId,
-                    priceAmount,
-                    user?.username,
-                    user?.whatsapp as string
-                )
-
-                discountAmount = validated.discountAmount,
-                totalAmount = validated.finalAmount
-            }
-
-            // Handle SALDO payment
-            if(methodCode === "SALDO" && user){
-                const data = await PaymentUsingSaldo({
-                    amount: totalAmount,
-                    noWa : whatsAppNumber,
-                    orderId,
-                    productCode: productCode,
-                    productName: product.serviceName,
-                    tx,
-                    userId: gameId,
-                    username: user.username,
-                    serverId: zone,
-                });
-
-                return {
-                    status: data.status,
-                    message: data.message,
-                    code: data.status ? 200 : 400,
-                    data: {
-                        orderId,
-                        productName: product.serviceName,
-                        amount: priceAmount,
-                        discount: discountAmount,
-                        finalAmount: totalAmount,
-                        paymentMethod: "SALDO",
-                        timestamp: new Date().toISOString(),
-                        transactionDetails: data.data,
+        // Execute transaction
+        const result = await prisma.$transaction(
+            async (tx) => {
+                // Find product
+                const product = await tx.service.findFirst({
+                    where: {
+                        providerId: productCode,
                     },
-                };
-            } else {
-                // Handle other payment methods
-                const method = await ValidationMethodPayment({
-                    amount: totalAmount,
-                    paymentCode : methodCode,
-                    tx,
-                });
-                console.log(method.taxAmount)
-                totalAmount = method.totalAmount;
-                fee = method.methodTax ?? 0;
-                feeRupiah = method.taxAmount;
-                profitAmount = calculatePricing.profitRupiah - method.taxAmount
-
-                const toDuitku = await duitku.CreateTransaction({
-                    paymentAmount: Math.max(totalAmount),
-                    paymentCode : methodCode,
-                    merchantOrderId : orderId,
-                    productDetails: product.serviceName,
-                    callbackUrl: `${BASE_URL}/callback/duitku`,
-                    returnUrl: `${FRONTEND_URL}/invoice?invoice=${orderId}`,
-                    cust: user?.username,
-                    noWa : whatsAppNumber,
                 });
 
-                if (!toDuitku || !toDuitku.status) {
-                    return {
-                        status: false,
-                        message: "Failed to create payment gateway transaction",
-                        code: 500,
-                        error: toDuitku?.message || "API connection error",
-                    };
+                if (!product) {
+                    throw new Error("Product not found")
+                }
+                
+                // Calculate pricing
+                const calculatePricing = CalculatePricingWithProfitLogic(
+                    product as ServiceData,
+                    user?.role
+                );                
+                
+                let priceAmount: number = Math.round(calculatePricing.price);
+                let totalAmount: number = calculatePricing.price;
+                let fee: number = 0;
+                let feeRupiah: number = 0;
+                let discountAmount = 0;
+                let profitAmount: number = calculatePricing.profitRupiah;
+
+                // Handle voucher validation
+                if (voucherCode) {
+                    const validated = await voucherService.validateVoucher({
+                        amount: priceAmount,
+                        code: voucherCode,
+                        categoryId: product.categoryId,
+                        orderId,
+                        username: user?.username,
+                        whatsapp: user?.whatsapp as string,
+                    });
+
+                    if (!validated) {
+                        throw new Error("Failed to validate voucher")
+                    }
+
+                    await voucherService.useVoucher(
+                        validated.voucher.id,
+                        orderId,
+                        priceAmount,
+                        user?.username,
+                        user?.whatsapp as string
+                    );
+
+                    discountAmount = validated.discountAmount;
+                    totalAmount = validated.finalAmount;
                 }
 
-                const log = {
-                    ...toDuitku.data,
-                    message: "Pembelian Pending",
-                };
+                // Handle SALDO payment
+                if (methodCode === "SALDO") {
+                    if (!user) {
+                        throw new Error("User authentication required for SALDO payment")
+                    }
 
-                try {
-                     await tx.payment.create({
-                        data: {
-                            totalAmount: totalAmount,
-                            orderId : orderId,
-                            price: priceAmount.toString(),
-                            method: method.method?.name ?? "",
-                            buyerNumber: whatsAppNumber,
-                            feeAmount: feeRupiah,
-                            fee,
-                            status: TRANSACTION_FLOW.PENDING,
-                            reference: toDuitku.data.reference,
-                            paymentNumber: toDuitku.data.qrString || toDuitku.data.vaNumber || toDuitku.data.paymentUrl,
-                            createdAt: new Date(),
-                        },
+                    const saldoResult = await PaymentUsingSaldo({
+                        amount: totalAmount,
+                        noWa: whatsAppNumber,
+                        orderId,
+                        productCode: productCode,
+                        productName: product.serviceName,
+                        tx,
+                        userId: gameId,
+                        username: user.username,
+                        serverId: zone,
                     });
 
-                    const pembelian = await tx.transaction.create({
-                        data: {
-                            profitAmount,
-                            price : priceAmount,
-                            profit: calculatePricing.profit,
-                            isDigi: "active",
-                            serviceName: product.serviceName,
-                            status: TRANSACTION_FLOW.PENDING,
-                            log: JSON.stringify(log),
-                            discount: discountAmount,
-                            purchasePrice: product.priceFromDigi,
-                            nickname,
-                            orderId,
-                            transactionType: "TOPUP",
-                            userId : gameId,
-                            zone,
-                            successReportSent: "inactive",
-                            providerOrderId: productCode,
-                            message: "Pembelian Pending",
-                            username: user?.username as string,
-                            createdAt: new Date(),
-                        },
+                    await logger.logTransaction({
+                        orderId,
+                        transactionType: 'PAYMENT',
+                        status: saldoResult.status ? 'SUCCESS' : 'FAILED',
+                        userId: gameId,
+                        amount: totalAmount,
+                        paymentMethod: 'SALDO',
+                        data: saldoResult,
+                        timestamp: new Date(),
                     });
 
-                   
+                
                     return {
-                        status: true,
-                        message: "Transaction created successfully",
-                        code: 200,
+                        status: saldoResult.status,
+                        message: saldoResult.message,
+                        code: saldoResult.status ? 200 : 400,
                         data: {
                             orderId,
                             productName: product.serviceName,
                             amount: priceAmount,
                             discount: discountAmount,
                             finalAmount: totalAmount,
-                            fee: feeRupiah,
-                            paymentMethod: method.method?.name,
-                            paymentUrl: toDuitku.data.paymentUrl,
-                            qrString: toDuitku.data.qrString,
-                            vaNumber: toDuitku.data.vaNumber,
-                            reference: toDuitku.data.reference,
+                            paymentMethod: "SALDO",
                             timestamp: new Date().toISOString(),
+                            transactionDetails: saldoResult.data,
                         },
                     };
-
-                } catch (error) {
-                    throw new Error("FAILED TO CREATE TRANSACTIONS: " + (error instanceof Error ? error.message : 'Unknown error'));
                 }
+
+                // Handle other payment methods
+                const method = await ValidationMethodPayment({
+                    amount: totalAmount,
+                    paymentCode: methodCode,
+                    tx,
+                });
+
+                if (!method.method) {
+                    throw new Error("Payment method not found or not available")
+                }
+
+                totalAmount = method.totalAmount;
+                fee = method.methodTax ?? 0;
+                feeRupiah = method.taxAmount;
+                profitAmount = calculatePricing.profitRupiah - method.taxAmount;
+
+                // Create Duitku transaction
+                const toDuitku = await duitku.CreateTransaction({
+                    paymentAmount: Math.max(totalAmount, 0),
+                    paymentCode: methodCode,
+                    merchantOrderId: orderId,
+                    productDetails: product.serviceName,
+                    callbackUrl: `${BASE_URL}/callback/duitku`,
+                    returnUrl: `${FRONTEND_URL}/invoice?invoice=${orderId}`,
+                    cust: user?.username,
+                    noWa: whatsAppNumber,
+                });
+
+                if (!toDuitku || !toDuitku.status) {
+                    throw new Error(toDuitku?.message || "Failed to create payment gateway transaction")
+                }
+
+                // Log payment creation
+                await logger.logTransaction({
+                    orderId,
+                    transactionType: 'PAYMENT',
+                    status: 'PENDING',
+                    userId: gameId,
+                    amount: totalAmount,
+                    paymentMethod: method.method.name,
+                    reference: toDuitku.data.reference,
+                    data: toDuitku.data,
+                    timestamp: new Date(),
+                });
+
+                const log = {
+                    ...toDuitku.data,
+                    message: "Pembelian Pending",
+                };
+
+                // Create payment record
+                await tx.payment.create({
+                    data: {
+                        totalAmount: totalAmount,
+                        orderId: orderId,
+                        price: priceAmount.toString(),
+                        method: method.method.name,
+                        buyerNumber: whatsAppNumber,
+                        feeAmount: feeRupiah,
+                        fee,
+                        status: TRANSACTION_FLOW.PENDING,
+                        reference: toDuitku.data.reference,
+                        paymentNumber: toDuitku.data.qrString || toDuitku.data.vaNumber || toDuitku.data.paymentUrl,
+                        createdAt: new Date(),
+                    },
+                });
+
+                // Create transaction record
+                await tx.transaction.create({
+                    data: {
+                        profitAmount,
+                        price: priceAmount,
+                        profit: calculatePricing.profit,
+                        isDigi: "active",
+                        serviceName: product.serviceName,
+                        status: TRANSACTION_FLOW.PENDING,
+                        log: JSON.stringify(log),
+                        discount: discountAmount,
+                        purchasePrice: product.priceFromDigi,
+                        nickname,
+                        orderId,
+                        transactionType: "TOPUP",
+                        userId: gameId,
+                        zone,
+                        successReportSent: "inactive",
+                        providerOrderId: productCode,
+                        message: "Pembelian Pending",
+                        username: user?.username || "",
+                        createdAt: new Date(),
+                    },
+                });
+
+             
+                const transactionResult: TransactionResult = {
+                    status: true,
+                    message: "Transaction created successfully",
+                    code: 200,
+                    data: {
+                        orderId,
+                        productName: product.serviceName,
+                        amount: priceAmount,
+                        discount: discountAmount,
+                        fee: feeRupiah,
+                        finalAmount: totalAmount,
+                        paymentMethod: method.method.name,
+                        paymentUrl: toDuitku.data.paymentUrl,
+                        reference: toDuitku.data.reference,
+                        qrString: toDuitku.data.qrString,
+                        vaNumber: toDuitku.data.vaNumber,
+                        timestamp: new Date().toISOString(),
+                    },
+                };
+
+                await logger.logTransaction({
+                    orderId,
+                    transactionType: 'CREATE',
+                    status: 'SUCCESS',
+                    userId: gameId,
+                    data: transactionResult,
+                    timestamp: new Date(),
+                });
+
+                return transactionResult;
+            },
+            {
+                timeout: 30000,
             }
-        }
-    );
+        );
+
+        return result;
+
+    } catch (error) {
+        await logger.logTransaction({
+            orderId,
+            transactionType: 'CREATE',
+            status: 'FAILED',
+            userId: gameId,
+            error: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date(),
+        });
+
+        return {
+            status: false,
+            message: error instanceof Error ? error.message : 'Transaction failed',
+            code: 500,
+            error: error instanceof Error ? error.message : 'Unknown error',
+        };
+    }
 }

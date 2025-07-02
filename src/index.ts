@@ -4,6 +4,9 @@ import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
 import { prisma } from "./lib/prisma";
 import routes from "./route/index";
+import { AdminSocketManager } from "./lib/socket/AdminSocketManager";
+import { SocketManager, startSocketServer } from "./lib/socket/SocketManager";
+import { TransactionLogger } from "./lib/logger";
 
 const app = new Hono();
 
@@ -54,24 +57,28 @@ app.use(
 app.route("/api/v1", routes);
 
 // Health check endpoint
-app.get("/health", async (c) => {
-  try {
-    await prisma.$queryRaw`SELECT 1`;
-    return c.json({
-      status: "ok",
-      database: "connected",
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    return c.json(
-      {
-        status: "error",
-        database: "disconnected",
-        error: error instanceof Error ? error.message : "Unknown error",
-      },
-      500
-    );
-  }
+const transactionLogger = new TransactionLogger();
+
+
+// Health check endpoint
+app.get('/health', (c) => {
+  const stats = transactionLogger.getTransactionStats();
+  return c.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    websocket: {
+      server: 'running',
+      port: 3003,
+      stats
+    }
+  });
+});
+
+
+// Socket stats endpoint
+app.get("/socket/stats", (c) => {
+  const socket = new SocketManager() 
+  return c.json(socket.getConnectionStats());
 });
 
 // Root endpoint
@@ -84,9 +91,24 @@ app.get("/", (c) => {
   });
 });
 
+// Start both servers
+const startServers = async () => {
+  try {
+    // Start Socket.IO server first
+    await startSocketServer();
+    
+    // Start main HTTP server
+    console.log(`🚀 Starting HTTP server on port ${PORT}`);
+    
+  } catch (error) {
+    console.error('❌ Failed to start servers:', error);
+    process.exit(1);
+  }
+};
+
 // Graceful shutdown
 process.on("SIGINT", async () => {
-  console.log("\n🛑 Shutting down server...");
+  console.log("\n🛑 Shutting down servers...");
   await prisma.$disconnect();
   console.log("✅ Database disconnected");
   process.exit(0);
@@ -98,7 +120,11 @@ process.on("SIGTERM", async () => {
   process.exit(0);
 });
 
+startServers();
+
 export default {
   port: PORT,
   fetch: app.fetch,
 };
+
+export { SocketManager,AdminSocketManager };
