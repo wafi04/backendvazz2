@@ -62,7 +62,7 @@ const transactionLogger = new TransactionLogger();
 
 // Health check endpoint
 app.get('/health', (c) => {
-  const stats = transactionLogger.getTransactionStats();
+  const stats = transactionLogger.getStats();
   return c.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),

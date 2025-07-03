@@ -23,11 +23,7 @@ interface CreateOrderTransaction {
 }
 
 interface TransactionResult {
-    status: boolean
-    message: string
-    code: number
     data?: any
-    error?: string
 }
 
 export async function OrderTransactions(data: CreateOrderTransaction): Promise<TransactionResult> {
@@ -144,10 +140,8 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
 
                 
                     return {
-                        status: saldoResult.status,
-                        message: saldoResult.message,
-                        code: saldoResult.status ? 200 : 400,
                         data: {
+                            status : "created",
                             orderId,
                             productName: product.serviceName,
                             amount: priceAmount,
@@ -211,7 +205,7 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
                 };
 
                 // Create payment record
-                await tx.payment.create({
+                const payment = await tx.payment.create({
                     data: {
                         totalAmount: totalAmount,
                         orderId: orderId,
@@ -240,24 +234,22 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
                         discount: discountAmount,
                         purchasePrice: product.priceFromDigi,
                         nickname,
-                        orderId,
+                        orderId : payment.orderId,
                         transactionType: "TOPUP",
                         userId: gameId,
                         zone,
                         successReportSent: "inactive",
                         providerOrderId: productCode,
                         message: "Pembelian Pending",
-                        username: user?.username || "",
+                        username: user?.username,
                         createdAt: new Date(),
                     },
                 });
 
              
                 const transactionResult: TransactionResult = {
-                    status: true,
-                    message: "Transaction created successfully",
-                    code: 200,
                     data: {
+                        status : "cretaed",
                         orderId,
                         productName: product.serviceName,
                         amount: priceAmount,
@@ -302,10 +294,7 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
         });
 
         return {
-            status: false,
-            message: error instanceof Error ? error.message : 'Transaction failed',
-            code: 500,
-            error: error instanceof Error ? error.message : 'Unknown error',
-        };
+            data : null
+        }
     }
 }

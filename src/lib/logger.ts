@@ -32,9 +32,6 @@ export class TransactionLogger {
       };
 
       const result = await collection.insertOne(logEntry);
-      console.log(`📝 Transaction logged: ${logData.orderId} - ${logData.transactionType}`);
-
-      // Emit ke user dan admin
       this.emitToUser(logData);
       this.emitToAdmin(logData);
 
