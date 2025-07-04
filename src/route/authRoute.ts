@@ -121,7 +121,6 @@ authRoutes.get("/me", authMiddleware, async (c) => {
 // Logout route
 authRoutes.post("/logout", authMiddleware, async (c) => {
   try {
-    // Clear authentication cookie
     authHelpers.clearAuthCookie(c);
 
     return c.json({

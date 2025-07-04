@@ -9,6 +9,7 @@ import transaction from "./transaction"
 import payment from "./payment-method"
 import deposit from "./deposit"
 import LoggerRoutes from "./logger"
+import depositAnalytics from "./anaylitics/deposit"
 
 const routes =  new Hono()
 routes.route("/auth",auth)
@@ -20,6 +21,7 @@ routes.route("/news", news)
 routes.route("/transactions", transaction)
 routes.route("/payment-methods", payment)
 routes.route("/deposit", deposit)
+routes.route('/analytics/deposit',depositAnalytics)
 routes.route('/admin',LoggerRoutes)
 
 
