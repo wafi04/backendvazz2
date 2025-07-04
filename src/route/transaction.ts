@@ -4,6 +4,7 @@ import { TransactionFilters, TransactionService } from "../services/transaction/
 import { adminMiddleware, authMiddleware } from "../middleware/auth";
 import { ManualTransactions } from "../services/manual-transactions/server";
 import { OrderTransactions } from "../services/transaction/order";
+import { getRealIP, getUserAgent } from "../utils/cleintInfo";
 
 const transaction = new Hono()
 // order 
@@ -106,23 +107,36 @@ transaction.post("/retransactions", authMiddleware, adminMiddleware, async (c) =
 })
 
 
-transaction.post("/order",async(c)   => {
-    try {
-        const req = await c.req.json()
-        const result = await OrderTransactions(req)
-        return c.json({
-            success : true,
-            message : "Transaction Created Successfully",
-            data : result
-        })
-    } catch (error) {
-           console.error("Route error:", error);
-        return c.json({
-            success: true,
-            message: "Transaction failed successfully",
-        });
-    }
-})
+transaction.post("/order", async (c) => {
+  try {
+    const req = await c.req.json();
+    
+    const ip = getRealIP(c);
+    const userAgent = getUserAgent(c);
+
+    
+    const result = await OrderTransactions({
+      ...req,
+      ip: ip,
+      userAgent: userAgent
+    });
+    
+    return c.json({
+      success: true,
+      message: "Transaction Created Successfully",
+      data: result
+    });
+    
+  } catch (error) {
+    console.error("Route error:", error);
+    return c.json({
+      success: false, // Fix: should be false for error
+      message: "Transaction failed",
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }, 500);
+  }
+});
+
 
 
 transaction.get("/manual/retransactions", authMiddleware, adminMiddleware, async (c) => {

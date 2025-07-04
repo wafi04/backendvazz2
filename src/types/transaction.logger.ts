@@ -12,9 +12,7 @@ export interface TransactionLog {
     timestamp: Date;
     ip?: string;
     userAgent?: string;
-    // Tambahan untuk tracking
-    sessionId?: string;
-    socketId?: string;
+    position? : string
 }
 
 export interface WebSocketTransactionData {

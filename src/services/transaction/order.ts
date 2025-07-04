@@ -1,6 +1,6 @@
 import { BASE_URL, DUITKU_API_KEY, DUITKU_MERCHANT_CODE, FRONTEND_URL, TRANSACTION_FLOW } from "../../constants"
 import { DuitkuService } from "../../lib/duitku"
-import { TransactionLogger } from "../../lib/logger"
+import { AdminTransactionLogger } from "../../lib/logger"
 import { prisma } from "../../lib/prisma"
 import { ServiceData } from "../../types/service"
 import { UserResponse } from "../../types/user"
@@ -20,17 +20,16 @@ interface CreateOrderTransaction {
     whatsAppNumber: string
     nickname: string
     username?: string
+    ip?  :  string
+    userAgent? : string
 }
 
-interface TransactionResult {
-    data?: any
-}
 
-export async function OrderTransactions(data: CreateOrderTransaction): Promise<TransactionResult> {
-    const { gameId, methodCode, nickname, productCode, whatsAppNumber, voucherCode, zone, username } = data
+export async function OrderTransactions(data: CreateOrderTransaction) {
+    const { gameId, methodCode, nickname, productCode, whatsAppNumber, ip,userAgent,voucherCode, zone, username } = data
   
-    const logger = new TransactionLogger();
     const orderId = GenerateRandomId("VAZZ");
+    const logger = new AdminTransactionLogger()
     const userService = new AuthService()
     const voucherService = new VoucherService()
     const duitku = new DuitkuService(DUITKU_API_KEY as string, DUITKU_MERCHANT_CODE as string)
@@ -129,8 +128,8 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
 
                     await logger.logTransaction({
                         orderId,
-                        transactionType: 'PAYMENT',
-                        status: saldoResult.status ? 'SUCCESS' : 'FAILED',
+                        transactionType: 'CREATE',
+                        status: saldoResult.status ? 'PAID' : 'FAILED',
                         userId: gameId,
                         amount: totalAmount,
                         paymentMethod: 'SALDO',
@@ -141,7 +140,6 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
                 
                     return {
                         data: {
-                            status : "created",
                             orderId,
                             productName: product.serviceName,
                             amount: priceAmount,
@@ -189,9 +187,13 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
                 // Log payment creation
                 await logger.logTransaction({
                     orderId,
-                    transactionType: 'PAYMENT',
+                    transactionType: 'CREATE',
                     status: 'PENDING',
                     userId: gameId,
+                    ip,
+                    position : "AFTER FROM DUITKU",
+                    productCode,
+                    userAgent,
                     amount: totalAmount,
                     paymentMethod: method.method.name,
                     reference: toDuitku.data.reference,
@@ -247,9 +249,7 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
                 });
 
              
-                const transactionResult: TransactionResult = {
-                    data: {
-                        status : "cretaed",
+                const transactionResult = {
                         orderId,
                         productName: product.serviceName,
                         amount: priceAmount,
@@ -262,15 +262,20 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
                         qrString: toDuitku.data.qrString,
                         vaNumber: toDuitku.data.vaNumber,
                         timestamp: new Date().toISOString(),
-                    },
                 };
 
                 await logger.logTransaction({
+                    userAgent,
+                    ip,
+                    productCode,
+                    amount : 0,
+                    data : transactionResult,
+                    paymentMethod : methodCode,
                     orderId,
                     transactionType: 'CREATE',
-                    status: 'SUCCESS',
+                    status: 'PENDING',
+                    position : "AFTER INSERT DB",
                     userId: gameId,
-                    data: transactionResult,
                     timestamp: new Date(),
                 });
 
@@ -288,6 +293,13 @@ export async function OrderTransactions(data: CreateOrderTransaction): Promise<T
             orderId,
             transactionType: 'CREATE',
             status: 'FAILED',
+            userAgent,
+            ip,
+            productCode,
+            amount : 0,
+            data,
+            position: "FAILED",
+            paymentMethod : methodCode,
             userId: gameId,
             error: error instanceof Error ? error.message : 'Unknown error',
             timestamp: new Date(),

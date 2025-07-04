@@ -1,24 +1,31 @@
 import dbConnection from '../config/mongo';
 import { ObjectId } from 'mongodb';
-import { SocketManager } from './socket/SocketManager';
-import { AdminSocketManager } from './socket/AdminSocketManager';
 import { TransactionLog } from '../types/transaction.logger';
 
-export class TransactionLogger {
+// Interface untuk filter options
+export interface FilterOptions {
+  orderId?: string;
+  transactionType?: 'CREATE' | 'UPDATE' | 'PAYMENT' | 'PROCESS' | 'CALLBACK' | 'ERROR';
+  status?: string;
+  userId?: string;
+  productCode?: string;
+  paymentMethod?: string;
+  position?: string;
+  sessionId?: string;
+  socketId?: string;
+  reference?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
+  amountMin?: number;
+  amountMax?: number;
+  ip?: string;
+  userAgent?: string;
+}
+
+export class AdminTransactionLogger {
   private collectionName = 'transaction_logs';
-  private socketManager: SocketManager;
-  private adminSocketManager: AdminSocketManager | null = null;
-
-  constructor(adminSocketManager?: AdminSocketManager) {
-    this.socketManager = new SocketManager();
-    if (adminSocketManager) {
-      this.adminSocketManager = adminSocketManager;
-    }
-  }
-
-  setAdminSocketManager(adminSocketManager: AdminSocketManager) {
-    this.adminSocketManager = adminSocketManager;
-  }
+  
+  constructor() {}
 
   async logTransaction(logData: TransactionLog) {
     try {
@@ -32,175 +39,228 @@ export class TransactionLogger {
       };
 
       const result = await collection.insertOne(logEntry);
-      this.emitToUser(logData);
-      this.emitToAdmin(logData);
-
       return result;
     } catch (error) {
       console.error('❌ Failed to log transaction:', error);
     }
   }
 
-  // ========== EMIT KE USER (DATA AMAN) ==========
-  private emitToUser(logData: TransactionLog) {
-    const userSafeData = {
-      orderId: logData.orderId,
-      type: logData.transactionType,
-      status: logData.status,
-      amount: logData.amount,
-      message: this.getStatusMessage(logData),
-      timestamp: logData.timestamp.toISOString(),
-    };
-
-    // Emit berdasarkan userId atau socketId
-    if (logData.userId) {
-      this.socketManager.emitToUser(logData.userId, 'transaction_update', userSafeData);
-    }
-
-    if (logData.socketId) {
-      this.socketManager.emitToSocket(logData.socketId, 'transaction_update', userSafeData);
-    }
-  }
-
-  // ========== EMIT KE ADMIN (DATA LENGKAP) ==========
-  private emitToAdmin(logData: TransactionLog) {
-    if (!this.adminSocketManager) return;
-
-    const adminData = {
-      orderId: logData.orderId,
-      transactionType: logData.transactionType,
-      status: logData.status,
-      userId: logData.userId,
-      amount: logData.amount,
-      paymentMethod: logData.paymentMethod,
-      data: logData.data,
-      error: logData.error,
-      timestamp: logData.timestamp.toISOString(),
-      socketId: logData.socketId,
-    };
-
-    // Broadcast ke semua admin
-    this.adminSocketManager.broadcastTransactionLogToAdmins(adminData);
-  }
-
-  // ========== GET LOGS - USER HANYA PUNYA MEREKA ==========
-  async getUserLogs(userId: string, socketId?: string) {
+  // Method untuk get logs dengan filter
+  async getFilteredLogs(filters: FilterOptions = {}, limit: number = 100, skip: number = 0) {
     try {
       const db = await dbConnection.getDatabase('vazz_logs');
       const collection = db.collection(this.collectionName);
 
-      const query: any = {
+      // Build query object berdasarkan filter
+      const query: any = {};
+
+      // Filter berdasarkan field string exact match
+      if (filters.orderId) query.orderId = filters.orderId;
+      if (filters.transactionType) query.transactionType = filters.transactionType;
+      if (filters.status) query.status = filters.status;
+      if (filters.userId) query.userId = filters.userId;
+      if (filters.productCode) query.productCode = filters.productCode;
+      if (filters.paymentMethod) query.paymentMethod = filters.paymentMethod;
+      if (filters.position) query.position = filters.position;
+      if (filters.sessionId) query.sessionId = filters.sessionId;
+      if (filters.socketId) query.socketId = filters.socketId;
+      if (filters.reference) query.reference = filters.reference;
+      if (filters.ip) query.ip = filters.ip;
+      if (filters.dateFrom || filters.dateTo) {
+        query.timestamp = {};
+        if (filters.dateFrom) query.timestamp.$gte = filters.dateFrom;
+        if (filters.dateTo) query.timestamp.$lte = filters.dateTo;
+      }
+      if (filters.amountMin !== undefined || filters.amountMax !== undefined) {
+        query.amount = {};
+        if (filters.amountMin !== undefined) query.amount.$gte = filters.amountMin;
+        if (filters.amountMax !== undefined) query.amount.$lte = filters.amountMax;
+      }
+      if (filters.userAgent) {
+        query.userAgent = { $regex: filters.userAgent, $options: 'i' };
+      }
+
+      const logs = await collection
+        .find(query)
+        .sort({ timestamp: -1 })
+        .skip(skip)
+        .limit(limit)
+        .toArray();
+
+      // Get total count untuk pagination
+      const totalCount = await collection.countDocuments(query);
+
+      return {
+        logs,
+        totalCount,
+        hasMore: skip + limit < totalCount
+      };
+    } catch (error) {
+      console.error('❌ Failed to get filtered logs:', error);
+      return { logs: [], totalCount: 0, hasMore: false };
+    }
+  }
+
+  // Method untuk search logs berdasarkan text
+  async searchLogs(searchTerm: string, limit: number = 100, skip: number = 0) {
+    try {
+      const db = await dbConnection.getDatabase('vazz_logs');
+      const collection = db.collection(this.collectionName);
+
+      const query = {
         $or: [
-          { userId: userId },
-          ...(socketId ? [{ socketId: socketId }] : [])
+          { orderId: { $regex: searchTerm, $options: 'i' } },
+          { userId: { $regex: searchTerm, $options: 'i' } },
+          { productCode: { $regex: searchTerm, $options: 'i' } },
+          { reference: { $regex: searchTerm, $options: 'i' } },
+          { paymentMethod: { $regex: searchTerm, $options: 'i' } },
+          { position: { $regex: searchTerm, $options: 'i' } },
+          { status: { $regex: searchTerm, $options: 'i' } },
+          { error: { $regex: searchTerm, $options: 'i' } }
         ]
       };
 
       const logs = await collection
         .find(query)
         .sort({ timestamp: -1 })
-        .limit(50)
+        .skip(skip)
+        .limit(limit)
         .toArray();
 
-      // Data aman untuk user
-      const userLogs = logs.map(log => ({
-        orderId: log.orderId,
-        type: log.transactionType,
-        status: log.status,
-        amount: log.amount,
-        message: this.getStatusMessage(log as unknown as TransactionLog),
-        timestamp: log.timestamp,
-      }));
+      const totalCount = await collection.countDocuments(query);
 
-      return userLogs;
+      return {
+        logs,
+        totalCount,
+        hasMore: skip + limit < totalCount
+      };
     } catch (error) {
-      console.error('❌ Failed to get user logs:', error);
-      return [];
+      console.error('❌ Failed to search logs:', error);
+      return { logs: [], totalCount: 0, hasMore: false };
     }
   }
 
-  // ========== GET LOGS - ADMIN LIHAT SEMUA ==========
-  async getAdminLogs(limit: number = 100) {
+  // Method original dengan tambahan filter sederhana
+  async getAdminLogs(limit: number = 100, filters: Partial<FilterOptions> = {}) {
     try {
       const db = await dbConnection.getDatabase('vazz_logs');
       const collection = db.collection(this.collectionName);
 
+      // Build simple query
+      const query: any = {};
+      Object.keys(filters).forEach(key => {
+        if (filters[key as keyof FilterOptions] !== undefined) {
+          query[key] = filters[key as keyof FilterOptions];
+        }
+      });
+
       const logs = await collection
-        .find({})
+        .find(query)
         .sort({ timestamp: -1 })
         .limit(limit)
         .toArray();
 
-      return logs; // Admin dapat semua data
+      return logs;
     } catch (error) {
       console.error('❌ Failed to get admin logs:', error);
       return [];
     }
   }
 
-  // ========== QUICK LOG METHODS ==========
-
-  // Untuk user yang sudah login
-  async logForUser(userId: string, orderId: string, type: string, status: string, data?: any) {
-    return this.logTransaction({
-      orderId,
-      transactionType: type as any,
-      status,
-      userId,
-      data,
-      timestamp: new Date(),
-    });
+  // Method untuk get logs berdasarkan user ID
+  async getLogsByUserId(userId: string, limit: number = 100) {
+    return this.getFilteredLogs({ userId }, limit);
   }
 
-  // Untuk user yang belum login (pakai socketId)
-  async logForSocket(socketId: string, orderId: string, type: string, status: string, data?: any) {
-    return this.logTransaction({
-      orderId,
-      transactionType: type as any,
-      status,
-      socketId,
-      data,
-      timestamp: new Date(),
-    });
+  // Method untuk get logs berdasarkan transaction type
+  async getLogsByTransactionType(transactionType: 'CREATE' | 'UPDATE' | 'PAYMENT' | 'PROCESS' | 'CALLBACK' | 'ERROR', limit: number = 100) {
+    return this.getFilteredLogs({ transactionType }, limit);
   }
 
-  // ========== UTILITY ==========
-  private getStatusMessage(logData: TransactionLog): string {
-    const messages = {
-      CREATE: 'Transaction created',
-      PAYMENT: logData.status === 'SUCCESS' ? 'Payment completed' : 'Payment processing',
-      SUCCESS: 'Transaction completed',
-      ERROR: 'Transaction failed'
-    };
-
-    return messages[logData.transactionType as 'CREATE'] || 'Transaction updated';
+  // Method untuk get logs berdasarkan status
+  async getLogsByStatus(status: string, limit: number = 100) {
+    return this.getFilteredLogs({ status }, limit);
   }
 
-  async getStats() {
+  // Method untuk get logs berdasarkan range tanggal
+  async getLogsByDateRange(dateFrom: Date, dateTo: Date, limit: number = 100) {
+    return this.getFilteredLogs({ dateFrom, dateTo }, limit);
+  }
+
+  // Method untuk get logs hari ini
+  async getTodayLogs(limit: number = 100) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    return this.getFilteredLogs({ 
+      dateFrom: today, 
+      dateTo: tomorrow 
+    }, limit);
+  }
+
+  // Method untuk get error logs
+  async getErrorLogs(limit: number = 100) {
+    return this.getFilteredLogs({ transactionType: 'ERROR' }, limit);
+  }
+
+  async getStats(filters: FilterOptions = {}) {
     try {
       const db = await dbConnection.getDatabase('vazz_logs');
       const collection = db.collection(this.collectionName);
 
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      // Build query untuk stats
+      const query: any = {};
+      
+      // Default filter untuk hari ini jika tidak ada filter tanggal
+      if (!filters.dateFrom && !filters.dateTo) {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        query.timestamp = { $gte: today };
+      } else {
+        if (filters.dateFrom || filters.dateTo) {
+          query.timestamp = {};
+          if (filters.dateFrom) query.timestamp.$gte = filters.dateFrom;
+          if (filters.dateTo) query.timestamp.$lte = filters.dateTo;
+        }
+      }
 
-      const todayCount = await collection.countDocuments({
-        timestamp: { $gte: today }
+      // Apply other filters
+      Object.keys(filters).forEach(key => {
+        if (key !== 'dateFrom' && key !== 'dateTo' && filters[key as keyof FilterOptions] !== undefined) {
+          query[key] = filters[key as keyof FilterOptions];
+        }
       });
 
+      const totalCount = await collection.countDocuments(query);
       const successCount = await collection.countDocuments({
-        timestamp: { $gte: today },
+        ...query,
         status: 'SUCCESS'
       });
 
+      const errorCount = await collection.countDocuments({
+        ...query,
+        transactionType: 'ERROR'
+      });
+
       return {
-        todayTransactions: todayCount,
+        totalTransactions: totalCount,
         successTransactions: successCount,
-        successRate: todayCount > 0 ? (successCount / todayCount * 100).toFixed(2) : 0
+        errorTransactions: errorCount,
+        successRate: totalCount > 0 ? (successCount / totalCount * 100).toFixed(2) : 0,
+        errorRate: totalCount > 0 ? (errorCount / totalCount * 100).toFixed(2) : 0
       };
     } catch (error) {
       console.error('❌ Failed to get stats:', error);
-      return { todayTransactions: 0, successTransactions: 0, successRate: 0 };
+      return { 
+        totalTransactions: 0, 
+        successTransactions: 0, 
+        errorTransactions: 0,
+        successRate: 0,
+        errorRate: 0
+      };
     }
   }
 }
