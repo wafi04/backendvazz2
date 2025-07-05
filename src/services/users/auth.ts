@@ -2,7 +2,6 @@ import { hashSync, compareSync } from "bcryptjs";
 import { prisma } from "../../lib/prisma";
 import { generateApiKey, GenerateRandomId } from "../../utils/generate";
 import { registerSchema } from "../../validation/user";
-import { VerificationToken } from "./verificationToken";
 import {
   AuthResponse,
   RegisterInput,
@@ -10,11 +9,12 @@ import {
   UserResponse,
 } from "../../types/user";
 import { SessionService } from "./session";
+import { TokenService } from "./verificationToken";
 
 export class AuthService {
   private readonly JWT_SECRET: string;
   constructor(
-    private readonly tokenService = new VerificationToken(),
+    private readonly tokenService = new TokenService(),
     private readonly sessionService = new SessionService()
   ) {
     this.JWT_SECRET = process.env.JWT_SECRET || "";
@@ -74,67 +74,69 @@ export class AuthService {
   /**
    * Login user
    */
-  async login(input: LoginInput): Promise<AuthResponse> {
-    const { username, password } = input;
+ async login(input: LoginInput): Promise<AuthResponse> {
+  const { username, password } = input;
 
-    // Find user
-    const user = await prisma.user.findUnique({
-      where: { username },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        isOnline : true,
-        password: true,
-        role: true,
-        whatsapp : true,
-        balance: true,
-      },
-    });
+  // Find user
+  const user = await prisma.user.findUnique({
+    where: { username },
+    select: {
+      id: true,
+      name: true,
+      username: true,
+      isOnline: true,
+      password: true,
+      role: true,
+      whatsapp: true,
+      balance: true,
+    },
+  });
 
-    if (!user) {
-      throw new Error("Invalid credentials");
-    }
-
-    // Verify password
-    const isValidPassword = compareSync(password, user.password);
-    if (!isValidPassword) {
-      throw new Error("Invalid credentials");
-    }
-
-    const sessionId = GenerateRandomId(user.username)
-
-    // Generate JWT token
-    const token = await this.tokenService.generateToken({
-      sessionId,
-      username: user.username,
-      role : user.role
-    });
-
-    await this.sessionService.Create(prisma,{
-      deviceInfo : input.deviceInfo,
-      sessionId,
-      ip : input.ip,
-      token,
-      userAgent : input.userAgent,
-      username : user.username
-    })
-
-    return {
-      message: "Login successful",
-      user: {
-        id: user.id,
-        name: user.name,
-        username: user.username,
-        role: user.role,
-        isOnline : user.isOnline,
-        balance: user.balance,
-        whatsapp : user.whatsapp,
-        createdAt: new Date(),
-      },
-      token,
-    };
+  if (!user) {
+    throw new Error("Invalid credentials");
   }
+
+  // Verify password
+  const isValidPassword = compareSync(password, user.password);
+  if (!isValidPassword) {
+    throw new Error("Invalid credentials");
+  }
+
+  const sessionId = GenerateRandomId(user.username);
+
+  // ✅ Generate token pair
+  const tokenPair = await this.tokenService.generateTokenPair({
+    sessionId,
+    username: user.username,
+    role: user.role
+  });
+
+  // ✅ Create session dengan both tokens
+  await this.sessionService.Create(prisma, {
+    deviceInfo: input.deviceInfo,
+    sessionId,
+    ip: input.ip,
+    token : tokenPair.accessToken,
+    userAgent: input.userAgent,
+    username: user.username
+  });
+
+  return {
+    message: "Login successful",
+    user: {
+      id: user.id,
+      name: user.name,
+      username: user.username,
+      role: user.role,
+      isOnline: user.isOnline,
+      balance: user.balance,
+      whatsapp: user.whatsapp,
+      createdAt: new Date(),
+    },
+    accessToken: tokenPair.accessToken,
+    refreshToken: tokenPair.refreshToken,
+  };
+}
 
   /**
    * Get user profile by ID
@@ -145,6 +147,21 @@ export class AuthService {
       throw new Error("invalid credentials")
     }
     return user.user
+  }
+
+  /**
+   *  Refresh Token 
+  */
+  async RefreshToken(username : string, sessionId : string,role : string) {
+  
+    const token = await this.tokenService.generateTokenPair({
+      sessionId,
+      username,
+      role
+    });
+    return {
+      token
+    }
   }
 
   /**

@@ -36,6 +36,7 @@ export interface UserResponse {
   whatsapp?: string | null
   createdAt: Date;
   balance?: number;
+
   role: string;
   apiKey?: string | null;
 }
@@ -43,5 +44,6 @@ export interface UserResponse {
 export interface AuthResponse {
   message: string;
   user: UserResponse;
-  token?: string;
+  accessToken?: string;
+  refreshToken?: string;
 }
