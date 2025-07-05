@@ -9,6 +9,7 @@ import {
 import { authHelpers, authMiddleware } from "../middleware/auth";
 import { AuthService } from "../services/users/auth";
 import { createErrorResponse } from "../utils/response";
+import { getRealIP, getUserAgent } from "../utils/cleintInfo";
 
 const authRoutes = new Hono();
 const authService = new AuthService();
@@ -59,7 +60,14 @@ authRoutes.post(
   async (c) => {
     try {
       const input = c.req.valid("json");
-      const result = await authService.login(input);
+      const ip = getRealIP(c)
+      const userAgent = getUserAgent(c)
+      const result = await authService.login({
+        ...input,
+        deviceInfo : userAgent,
+        ip,
+        userAgent
+      });
 
       if(!result.user){
         return  c.json({
@@ -79,7 +87,6 @@ authRoutes.post(
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : "Login failed";
-      console.log(error)
       if (message === "Invalid credentials") {
         throw new HTTPException(401, { message });
       }
@@ -92,8 +99,8 @@ authRoutes.post(
 // Clean /me route
 authRoutes.get("/me", authMiddleware, async (c) => {
   try {
-    const user = c.get("jwtPayload") as { userId: number };
-    const userData = await authService.getUserProfile(user.userId);
+    const user = c.get("jwtPayload") as { sessionId : string };
+    const userData = await authService.getUserProfile(user.sessionId);
 
     if (!userData) {
       throw new HTTPException(401, { message: "UNAUTHENTICATED" });
@@ -252,7 +259,7 @@ authRoutes.put(
 // DELETE /api/auth/deactivate/:userId - Deactivate user (admin only)
 authRoutes.delete("/deactivate/:userId", authMiddleware, async (c) => {
   try {
-    const user = c.get("jwtPayload") as { userId: number; role: string };
+    const user = c.get("jwtPayload") as { username: number; role: string };
 
     // Check if current user is admin
     if (user.role !== "admin") {

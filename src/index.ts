@@ -2,10 +2,10 @@ import { Hono } from "hono";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 import { prettyJSON } from "hono/pretty-json";
+import { createServer } from "http";
 import { prisma } from "./lib/prisma";
 import routes from "./route/index";
-import { AdminSocketManager } from "./lib/socket/AdminSocketManager";
-import { SocketManager, startSocketServer } from "./lib/socket/SocketManager";
+import { wsManager } from "./lib/websocketManager";
 
 const app = new Hono();
 
@@ -56,22 +56,26 @@ app.use(
 app.route("/api/v1", routes);
 
 // Health check endpoint
-
-
-// Health check endpoint
 app.get('/health', (c) => {
   return c.json({
     status: 'healthy',
     timestamp: new Date().toISOString(),
-   
+    websocket: wsManager.getStats()
   });
 });
 
-
 // Socket stats endpoint
 app.get("/socket/stats", (c) => {
-  const socket = new SocketManager() 
-  return c.json(socket.getConnectionStats());
+  return c.json(wsManager.getStats());
+});
+
+// WebSocket users endpoint
+app.get("/socket/users", async (c) => {
+  const activeUsers = wsManager.getActiveUsers();
+  return c.json({
+    totalUsers: activeUsers.length,
+    activeUsers: activeUsers
+  });
 });
 
 // Root endpoint
@@ -81,27 +85,70 @@ app.get("/", (c) => {
     version: "1.0.0",
     port: PORT,
     environment: NODE_ENV,
+    websocket: {
+      enabled: true,
+      stats: wsManager.getStats()
+    }
   });
 });
 
+// Create HTTP server
+const server = createServer();
+
+// Initialize WebSocket
+const io = wsManager.init(server);
+
+// Start server
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`🔌 WebSocket server initialized`);
+  console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
+  console.log(`📡 Environment: ${NODE_ENV}`);
+});
 
 // Graceful shutdown
-process.on("SIGINT", async () => {
-  console.log("\n🛑 Shutting down servers...");
-  await prisma.$disconnect();
-  console.log("✅ Database disconnected");
-  process.exit(0);
+const gracefulShutdown = async (signal: string) => {
+  console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
+  
+  try {
+    // Shutdown WebSocket manager
+    await wsManager.shutdown();
+    console.log("✅ WebSocket manager shut down");
+    
+    // Close HTTP server
+    server.close(() => {
+      console.log("✅ HTTP server closed");
+    });
+    
+    // Disconnect database
+    await prisma.$disconnect();
+    console.log("✅ Database disconnected");
+    
+    process.exit(0);
+  } catch (error) {
+    console.error("❌ Error during shutdown:", error);
+    process.exit(1);
+  }
+};
+
+process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (error) => {
+  console.error("❌ Uncaught Exception:", error);
+  gracefulShutdown("uncaughtException");
 });
 
-process.on("SIGTERM", async () => {
-  console.log("\n🛑 Received SIGTERM, shutting down...");
-  await prisma.$disconnect();
-  process.exit(0);
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("❌ Unhandled Rejection at:", promise, "reason:", reason);
+  gracefulShutdown("unhandledRejection");
 });
-
 
 export default {
   port: PORT,
   fetch: app.fetch,
+  server,
+  io,
+  wsManager
 };
-

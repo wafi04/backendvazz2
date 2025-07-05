@@ -22,6 +22,9 @@ export interface RegisterInput {
 
 export interface LoginInput {
   username: string;
+  deviceInfo : string
+  userAgent : string
+  ip : string
   password: string;
 }
 
@@ -29,6 +32,7 @@ export interface UserResponse {
   id: number;
   name: string;
   username: string;
+  isOnline : boolean
   whatsapp?: string | null
   createdAt: Date;
   balance?: number;

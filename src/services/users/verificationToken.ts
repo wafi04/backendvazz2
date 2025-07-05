@@ -4,8 +4,8 @@ import { hashSync } from "bcryptjs";
 
 export class VerificationToken  {
 private readonly JWT_SECRET: string;
-  private readonly TOKEN_EXPIRY = 60 * 60 * 24 * 7; // 7 days
-  private readonly VERIFICATION_TOKEN_EXPIRY = 60 * 60; // 1 hour
+  private readonly TOKEN_EXPIRY = 60 * 60 * 12
+  private readonly VERIFICATION_TOKEN_EXPIRY = 60 * 60; 
 
   constructor() {
     this.JWT_SECRET = process.env.JWT_SECRET || "";
@@ -123,7 +123,7 @@ private readonly JWT_SECRET: string;
   /**
    * Generate JWT token
    */
-  async generateToken(payload: { userId: number; username: string; role: string }): Promise<string> {
+  async generateToken(payload: {  username: string; sessionId: string,role : string }): Promise<string> {
     return await sign(
       {
         ...payload,

@@ -1,6 +1,6 @@
 import { hashSync, compareSync } from "bcryptjs";
 import { prisma } from "../../lib/prisma";
-import { generateApiKey } from "../../utils/generate";
+import { generateApiKey, GenerateRandomId } from "../../utils/generate";
 import { registerSchema } from "../../validation/user";
 import { VerificationToken } from "./verificationToken";
 import {
@@ -9,10 +9,14 @@ import {
   LoginInput,
   UserResponse,
 } from "../../types/user";
+import { SessionService } from "./session";
 
 export class AuthService {
   private readonly JWT_SECRET: string;
-  constructor(private readonly tokenService = new VerificationToken()) {
+  constructor(
+    private readonly tokenService = new VerificationToken(),
+    private readonly sessionService = new SessionService()
+  ) {
     this.JWT_SECRET = process.env.JWT_SECRET || "";
     if (!this.JWT_SECRET) {
       throw new Error("JWT_SECRET environment variable is required");
@@ -54,6 +58,7 @@ export class AuthService {
         id: true,
         name: true,
         username: true,
+        isOnline :  true,
         createdAt: true,
         balance: true,
         role: true,
@@ -79,8 +84,10 @@ export class AuthService {
         id: true,
         name: true,
         username: true,
+        isOnline : true,
         password: true,
         role: true,
+        whatsapp : true,
         balance: true,
       },
     });
@@ -95,12 +102,23 @@ export class AuthService {
       throw new Error("Invalid credentials");
     }
 
+    const sessionId = GenerateRandomId(user.username)
+
     // Generate JWT token
     const token = await this.tokenService.generateToken({
-      userId: user.id,
+      sessionId,
       username: user.username,
-      role: user.role,
+      role : user.role
     });
+
+    await this.sessionService.Create(prisma,{
+      deviceInfo : input.deviceInfo,
+      sessionId,
+      ip : input.ip,
+      token,
+      userAgent : input.userAgent,
+      username : user.username
+    })
 
     return {
       message: "Login successful",
@@ -109,8 +127,10 @@ export class AuthService {
         name: user.name,
         username: user.username,
         role: user.role,
+        isOnline : user.isOnline,
         balance: user.balance,
-        createdAt: new Date(), // Will be populated from DB
+        whatsapp : user.whatsapp,
+        createdAt: new Date(),
       },
       token,
     };
@@ -119,25 +139,12 @@ export class AuthService {
   /**
    * Get user profile by ID
    */
-  async getUserProfile(userId: number): Promise<UserResponse> {
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        username: true,
-        createdAt: true,
-        balance: true,
-        role: true,
-        apiKey: true,
-      },
-    });
-
-    if (!user) {
-      throw new Error("User not found");
+  async getUserProfile(sessionId: string) {
+    const user = await this.sessionService.GetSession(sessionId)
+    if(!user){
+      throw new Error("invalid credentials")
     }
-
-    return user;
+    return user.user
   }
 
   /**
@@ -152,6 +159,7 @@ export class AuthService {
         username: true,
         whatsapp : true,
         createdAt: true,
+        isOnline : true,
         balance: true,
         role: true,
       },

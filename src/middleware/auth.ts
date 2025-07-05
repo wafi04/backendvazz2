@@ -28,12 +28,12 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
     try {
       const payload = await verify(token, jwtSecret);
 
-      if (!payload.userId || !payload.username) {
+      if (!payload.sessionId || !payload.username) {
         throw new HTTPException(401, { message: "Invalid token payload" });
       }
 
       c.set("jwtPayload", {
-        userId: payload.userId as number,
+        sessionId: payload.sessionId as string,
         username: payload.username as string,
         role: payload.role as string,
       });
@@ -57,12 +57,10 @@ export const authMiddleware: MiddlewareHandler = async (c, next) => {
 // Optional: Admin-only middleware
 export const adminMiddleware: MiddlewareHandler = async (c, next) => {
   const user = c.get("jwtPayload") as {
-    userId: number;
+    sessionId: number;
     username: string;
     role: string;
   };
-
-  console.log(user)
 
   if (!user || user.role !== "admin") {
     throw new HTTPException(403, { message: "Admin access required" });
@@ -77,7 +75,7 @@ export const authHelpers = {
       httpOnly: true,
       secure: NODE_ENV === "production",
       sameSite: NODE_ENV === "production" ? "None" : "Lax",
-      maxAge: 7 * 24 * 60 * 60, // 7 days
+      maxAge: 12 * 60 * 60, // 7 days
       path: "/",
     });
   },

@@ -278,7 +278,6 @@ model SubCategory {
   @@index([isActive, name])
   @@map("sub_categories")
 }
-
 model User {
   id            Int      @id @default(autoincrement()) @map("id")
   name          String   @map("name") @db.VarChar(200)
@@ -292,20 +291,48 @@ model User {
   createdAt     DateTime @default(now()) @map("created_at")
   updatedAt     DateTime @updatedAt @map("updated_at")
   lastPaymentAt DateTime @map("last_payment_at")
-
-  token String? @db.VarChar(500)
+  lastActiveAt  DateTime? @map("last_active_at")
+  isOnline      Boolean   @default(false) @map("is_online")
+  token         String? @db.VarChar(500)
 
   deposits     Deposit[]
   transactions Transaction[]
-
-  // Optimized indexes for user operations
+  session Session[]
+  
   @@index([username, role])
   @@index([role, balance(sort: Desc)])
   @@index([whatsapp])
   @@index([apiKey])
   @@index([balance(sort: Desc), role])
   @@index([lastPaymentAt(sort: Desc)])
+  @@index([isOnline, lastActiveAt(sort: Desc)])
   @@map("users")
+}
+
+model UserActivity {
+  id        String   @id @default(cuid())
+  username   String  @unique @map("user_id") 
+  sessionId  String  @unique @map("session_id")
+  isOnline  Boolean  @default(true) @map("is_online")
+  lastSeen  DateTime @default(now()) @updatedAt @map("last_seen") 
+
+  @@index([username,sessionId])
+  @@index([isOnline, lastSeen(sort: Desc)])
+  @@map("user_activities")
+}
+
+model Session {
+  id            String   @id @default(cuid()) @map("id")
+  ip            String? @db.Text()
+  userAgent     String? @db.Text()
+  deviceInfo    String? @db.Text()
+  sessionToken  String   @unique @map("session_token")
+  username      String  @map("username") 
+  expires       DateTime @map("expires")
+  user User @relation(fields: [username], references: [username], onDelete: Cascade)
+  
+  @@index([username, expires])
+  @@map("sessions")
 }
 
 model Voucher {
@@ -438,34 +465,9 @@ model BalanceHistory {
   @@map("balance_histories")
 }
 
-model Account {
-  id                String  @id @default(cuid()) @map("id")
-  userId            String  @map("user_id")
-  type              String  @map("type")
-  provider          String  @map("provider")
-  providerAccountId String  @map("provider_account_id")
-  refreshToken      String? @map("refresh_token") @db.Text
-  accessToken       String? @map("access_token") @db.Text
-  expiresAt         Int?    @map("expires_at")
-  tokenType         String? @map("token_type")
-  scope             String? @map("scope")
-  idToken           String? @map("id_token") @db.Text
-  sessionState      String? @map("session_state")
-
-  @@unique([provider, providerAccountId])
-  @@map("accounts")
-}
-
-model Session {
-  id           String   @id @default(cuid()) @map("id")
-  sessionToken String   @unique @map("session_token")
-  userId       String   @map("user_id")
-  expires      DateTime @map("expires")
-
-  @@map("sessions")
-}
 
 model VerificationToken {
+  id Int  @id @map("id") @default(autoincrement())
   identifier String   @map("identifier")
   token      String   @unique @map("token")
   expires    DateTime @map("expires")
