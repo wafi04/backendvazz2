@@ -1,17 +1,14 @@
 import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
-import {
-  registerSchema,
-  loginSchema,
-  updatePasswordSchema,
-} from "../validation/user";
+import { registerSchema,loginSchema} from "../validation/user";
 import { authHelpers, authMiddleware } from "../middleware/auth";
 import { AuthService } from "../services/users/auth";
 import { createErrorResponse } from "../utils/response";
-import { getRealIP, getUserAgent } from "../utils/cleintInfo";
-import { RateLimiter, rateLimitMiddleware } from "../middleware/rateLimiter";
+import { getUserAgent } from "../utils/cleintInfo";
 import { prisma } from "../lib/prisma";
+import { loginLimiter } from "../constants";
+import { getRealIP } from "../middleware/rateLimiter";
 
 const authRoutes = new Hono();
 const authService = new AuthService();
@@ -50,48 +47,9 @@ authRoutes.post(
     }
   }
 );
-const loginLimiter = new RateLimiter(5, 15 * 60 * 1000); 
-authRoutes.post(
-  "/login",
 
-  async (c, next) => {
-    const ip = getRealIP(c);
-    
-    // Parse body untuk dapat username
-    let username = 'unknown';
-    try {
-      const body = await c.req.json();
-      username = body?.username || 'unknown';
-    } catch (error) {
-      console.error("Error parsing JSON:", error);
-    }
-    
-    const key = `login:${ip}:${username}`;
-    
-    if (!loginLimiter.isAllowed(key)) {
-      const resetTime = loginLimiter.getResetTime(key);
-      const retryAfter = Math.ceil((resetTime - Date.now()) / 1000);
-      
-      c.header('Retry-After', retryAfter.toString());
-      c.header('X-RateLimit-Limit', '5');
-      c.header('X-RateLimit-Remaining', '0');
-      c.header('X-RateLimit-Reset', Math.ceil(resetTime / 1000).toString());
-      
-      throw new HTTPException(429, { 
-        message: "Too many login attempts. Please try again later.",
-      });
-    }
-    
-    // Add rate limit headers
-    const remaining = loginLimiter.getRemainingAttempts(key);
-    c.header('X-RateLimit-Limit', '5');
-    c.header('X-RateLimit-Remaining', remaining.toString());
-    c.header('X-RateLimit-Reset', Math.ceil(loginLimiter.getResetTime(key) / 1000).toString());
-    
-    await next();
-  },
-  
-  // ✅ Validator middleware
+ authRoutes.post(
+  "/login",
   validator("json", (value, c) => {
     const parsed = loginSchema.safeParse(value);
     if (!parsed.success) {
@@ -99,16 +57,12 @@ authRoutes.post(
     }
     return parsed.data;
   }),
-  
-  // ✅ Main login handler
   async (c) => {
-    const ip = getRealIP(c);
-    const userAgent = getUserAgent(c);
-    let username = 'unknown';
-    
     try {
+      const ip = getRealIP(c);
+      const userAgent = getUserAgent(c);
+      
       const input = c.req.valid("json");
-      username = input.username;
       
       const result = await authService.login({
         ...input,
@@ -117,42 +71,67 @@ authRoutes.post(
         userAgent
       });
 
-      // ✅ Check if login successful
-      if (!result.user) {
-        // ✅ Log failed attempt
-        
+      if (!result.user) {        
         return c.json({
           success: false,
-          message: "Login failed",
-          user: null,
-        }, 401); // ✅ Proper HTTP status
+          message: "Invalid credentials"
+        }, 401);
       }
 
-      
-      // Set authentication cookie
+      // Set auth cookies
       authHelpers.setAuthCookies(c, result.accessToken!, result.refreshToken!);
 
       return c.json({
         success: true,
         message: "Login successful",
-        data: result.user,
+        data: result.user
       });
       
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Login failed";
-      
-      if (message === "Invalid credentials") {
-        throw new HTTPException(401, { message });
-      }
-
-      // ✅ Log internal error
       console.error("Login error:", error);
-      throw new HTTPException(500, { message: "Internal server error" });
+      
+      if (error instanceof Error) {
+        switch (error.message) {
+          case "Invalid credentials":
+          case "User not found":
+          case "Incorrect password":
+            return c.json({
+              success: false,
+              message: "Invalid credentials"
+            }, 401);
+          
+          case "Account locked":
+          case "Account disabled":
+            return c.json({
+              success: false,
+              message: "Account is temporarily locked"
+            }, 403);
+          
+          case "Email not verified":
+            return c.json({
+              success: false,
+              message: "Please verify your email before logging in"
+            }, 403);
+          
+          default:
+            console.error("Unexpected login error:", error);
+            return c.json({
+              success: false,
+              message: "Internal server error"
+            }, 500);
+        }
+      }
+      
+      // Fallback for unknown errors
+      return c.json({
+        success: false,
+        message: "Internal server error"
+      }, 500);
     }
   }
 );
 
-// Clean /me route
+
 authRoutes.get("/me", authMiddleware, async (c) => {
   try {
     const user = c.get("jwtPayload") as { sessionId : string };
@@ -169,10 +148,8 @@ authRoutes.get("/me", authMiddleware, async (c) => {
       data: userData
     });
   } catch (error) {
-    console.error("Get profile error:", error);
     const message =
       error instanceof Error ? error.message : "Failed to get user profile";
-
     if (message === "User not found") {
       throw new HTTPException(404, { message });
     }
@@ -181,7 +158,6 @@ authRoutes.get("/me", authMiddleware, async (c) => {
   }
 });
 
-// GET /api/auth/user/:username - Get user by username
 authRoutes.get("/user/:username", authMiddleware, async (c) => {
   try {
     const username = c.req.param("username");
@@ -204,7 +180,6 @@ authRoutes.get("/user/:username", authMiddleware, async (c) => {
 });
 
 
-// PUT /api/auth/balance - Update user balance
 authRoutes.put(
   "/balance",
   authMiddleware,
@@ -263,7 +238,6 @@ authRoutes.delete("/deactivate/:userId", authMiddleware, async (c) => {
   try {
     const user = c.get("jwtPayload") as { username: number; role: string };
 
-    // Check if current user is admin
     if (user.role !== "admin") {
       throw new HTTPException(403, { message: "Insufficient permissions" });
     }
@@ -292,7 +266,6 @@ authRoutes.post("/logout", authMiddleware, async (c) => {
   try {
     const { sessionId } = c.get("jwtPayload");
     
-    // Hapus session dari database
     await prisma.session.delete({
       where: { id: sessionId }
     });
@@ -310,7 +283,6 @@ authRoutes.post("/logout", authMiddleware, async (c) => {
         data: { isOnline: false }
       });
     }
-
 
     authHelpers.clearAuthCookies(c);
 

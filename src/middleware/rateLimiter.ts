@@ -1,27 +1,74 @@
-import { HTTPException } from "hono/http-exception";
+export const getRealIP = (c: any): string => {
+  const isDevelopment = process.env.NODE_ENV === 'development' || 
+                       c.req.url?.includes('localhost') ||
+                       c.req.url?.includes('127.0.0.1');
+  
+  if (isDevelopment) {
+    const userAgent = c.req.header('user-agent') || 'unknown';
+    const origin = c.req.header('origin') || c.req.header('referer') || 'unknown';
+    const combined = `${userAgent}-${origin}`;
+    const hash = Buffer.from(combined).toString('base64').substring(0, 12);
+    
+    return `dev-${hash}`;
+  }
+  
+  const headers = [
+    'cf-connecting-ip',     
+    'x-real-ip',            
+    'x-forwarded-for',      
+    'x-client-ip',          
+    'true-client-ip',       
+    'x-cluster-client-ip',  
+    'forwarded-for',        
+    'forwarded'             // RFC 7239
+  ];
+  
+  for (const header of headers) {
+    const value = c.req.header(header);
+    if (value) {
+      const ip = value.split(',')[0].trim();
+      if (ip && ip !== 'unknown') {
+        return ip;
+      }
+    }
+  }
+  
+  return c.env?.REMOTE_ADDR || 'unknown';
+};
 
-export class RateLimiter {
+export class SmartRateLimiter {
   private attempts = new Map<string, { count: number; resetTime: number }>();
+  private isDevelopment: boolean;
   
   constructor(
     private maxAttempts: number,
-    private windowMs: number
-  ) {}
+    private windowMs: number,
+    private devMaxAttempts?: number
+  ) {
+    this.isDevelopment = process.env.NODE_ENV === 'development';
+  }
 
   getMaxAttempts(): number {
-    return this.maxAttempts;
+    return this.isDevelopment && this.devMaxAttempts 
+      ? this.devMaxAttempts 
+      : this.maxAttempts;
   }
   
   isAllowed(key: string): boolean {
+    if (this.isDevelopment && process.env.DISABLE_RATE_LIMIT === 'true') {
+      return true;
+    }
+    
     const now = Date.now();
     const record = this.attempts.get(key);
+    const maxAttempts = this.getMaxAttempts();
     
     if (!record || now > record.resetTime) {
       this.attempts.set(key, { count: 1, resetTime: now + this.windowMs });
       return true;
     }
     
-    if (record.count >= this.maxAttempts) {
+    if (record.count >= maxAttempts) {
       return false;
     }
     
@@ -31,66 +78,51 @@ export class RateLimiter {
   
   getRemainingAttempts(key: string): number {
     const record = this.attempts.get(key);
+    const maxAttempts = this.getMaxAttempts();
+    
     if (!record || Date.now() > record.resetTime) {
-      return this.maxAttempts;
+      return maxAttempts;
     }
-    return Math.max(0, this.maxAttempts - record.count);
+    return Math.max(0, maxAttempts - record.count);
   }
   
   getResetTime(key: string): number {
     const record = this.attempts.get(key);
     return record ? record.resetTime : Date.now();
   }
+  
+  clearAttempts(key: string): void {
+    this.attempts.delete(key);
+  }
+  
+  getDebugInfo(): any {
+    return {
+      isDevelopment: this.isDevelopment,
+      maxAttempts: this.getMaxAttempts(),
+      totalKeys: this.attempts.size,
+      keys: Array.from(this.attempts.keys())
+    };
+  }
 }
 
-export const rateLimitMiddleware = (limiter: RateLimiter, keyGenerator: (c: any) => string) => {
-  return async (c: any, next: () => Promise<void>) => {
-    const key = keyGenerator(c);
-    
-    if (!limiter.isAllowed(key)) {
-      c.header('X-RateLimit-Limit', limiter.getMaxAttempts().toString());
-      const resetTime = limiter.getResetTime(key);
-      const retryAfter = Math.ceil((resetTime - Date.now()) / 1000);
-      
-      c.header('Retry-After', retryAfter.toString());
-      c.header('X-RateLimit-Limit', limiter.getMaxAttempts().toString());
-      c.header('X-RateLimit-Remaining', '0');
-      c.header('X-RateLimit-Reset', Math.ceil(resetTime / 1000).toString());
-      
-      throw new HTTPException(429, { 
-        message: "Too many requests. Please try again later."
-      });
-    }
-    
-   
-    const remaining = limiter.getRemainingAttempts(key);
-    c.header('X-RateLimit-Limit', limiter.getMaxAttempts().toString());
-    c.header('X-RateLimit-Remaining', remaining.toString());
-    c.header('X-RateLimit-Reset', Math.ceil(limiter.getResetTime(key) / 1000).toString());
-    
-    await next();
-  };
-};
-
-export const createRateLimiters = () => {
+export const createSmartRateLimiters = () => {
   return {
-    // By IP
-    byIP: new RateLimiter(1000, 60 * 60 * 1000), // 1000 requests per hour
+    loginAttempts: new SmartRateLimiter(
+      5,                    // Production: 5 attempts
+      15 * 60 * 1000,      // 15 minutes window
+      50                   // Development: 50 attempts
+    ),
     
-    // By User (after login)
-    byUser: new RateLimiter(5000, 60 * 60 * 1000), // 5000 requests per hour
+    apiCalls: new SmartRateLimiter(
+      1000,                // Production: 1000 per hour
+      60 * 60 * 1000,      // 1 hour window
+      10000                // Development: 10000 per hour
+    ),
     
-    // Login attempts
-    loginAttempts: new RateLimiter(5, 15 * 60 * 1000), // 5 attempts per 15 minutes
-    
-    // Password reset
-    passwordReset: new RateLimiter(3, 60 * 60 * 1000), // 3 attempts per hour
-    
-    // Registration
-    registration: new RateLimiter(5, 24 * 60 * 60 * 1000), // 5 per day
-    
-    // API calls
-    apiCalls: new RateLimiter(10000, 60 * 60 * 1000), // 10k per hour
+    registration: new SmartRateLimiter(
+      5,                   
+      24 * 60 * 60 * 1000, 
+      100                  
+    )
   };
 };
-

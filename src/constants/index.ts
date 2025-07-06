@@ -1,3 +1,5 @@
+import { SmartRateLimiter } from "../middleware/rateLimiter";
+
 export enum TRANSACTION_FLOW {
     PENDING = "PENDING",
     PAID = "PAID",
@@ -5,6 +7,7 @@ export enum TRANSACTION_FLOW {
     SUCCESS = "SUCCESS",
     FAILED = "FAILED",
 }
+export const loginLimiter = new SmartRateLimiter(5, 15 * 60 * 1000, 50);
 export const BASE_URL = `http://localhost:3002/api/v1`
 export const FRONTEND_URL = `http://localhost:3000`
 export const DIGI_USERNAME = process.env.DIGI_USERNAME as string;
