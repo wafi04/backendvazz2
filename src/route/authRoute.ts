@@ -2,12 +2,11 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
 import { registerSchema,loginSchema} from "../validation/user";
-import { authHelpers, authMiddleware } from "../middleware/auth";
+import { adminMiddleware, authHelpers, authMiddleware } from "../middleware/auth";
 import { AuthService } from "../services/users/auth";
 import { createErrorResponse } from "../utils/response";
 import { getUserAgent } from "../utils/cleintInfo";
 import { prisma } from "../lib/prisma";
-import { loginLimiter } from "../constants";
 import { getRealIP } from "../middleware/rateLimiter";
 
 const authRoutes = new Hono();
@@ -180,59 +179,34 @@ authRoutes.get("/user/:username", authMiddleware, async (c) => {
 });
 
 
-authRoutes.put(
-  "/balance",
-  authMiddleware,
-  validator("json", (value, c) => {
-    // Simple validation
-    if (!value.username || !value.amount || !value.operation) {
-      return createErrorResponse(
-        "Missing required fields: username, amount, operation",
-        400
-      );
-    }
+authRoutes.get("/all/users",authMiddleware,adminMiddleware,async(c) => {
+  try {
+      const limit = c.req.query("limit") ?? "10"
+      const page = c.req.query("page") ?? "1"
+      const search = c.req.query("search");
 
-    if (!["add", "subtract"].includes(value.operation)) {
-      return createErrorResponse("Operation must be 'add' or 'subtract'", 400);
-    }
-
-    if (typeof value.amount !== "number" || value.amount < 1) {
-      return createErrorResponse("Amount must be a positive number", 400);
-    }
-
-    return value;
-  }),
-  async (c) => {
-    try {
-      const { username, amount, operation } = c.req.valid("json");
-      const newBalance = await authService.updateBalance(
-        username,
-        amount,
-        operation
-      );
+      const user = await authService.GetAllUserWithSession({
+        limit : parseInt(limit),
+        page : parseInt(page),
+        search
+      })
 
       return c.json({
-        success: true,
-        message: "Balance updated successfully",
-        newBalance,
-      });
-    } catch (error) {
-      console.error("Update balance error:", error);
-      const message =
-        error instanceof Error ? error.message : "Failed to update balance";
-
-      if (message === "User not found") {
-        throw new HTTPException(404, { message });
-      }
-
-      if (message === "Insufficient balance") {
-        throw new HTTPException(400, { message });
-      }
-
-      throw new HTTPException(500, { message });
-    }
+        success : true,
+        message : "User Retreived Successfully",
+        data : user
+      },200)
+  } catch (error) {
+    return c.json({
+      success : false,
+      message : "failed to get users",
+      error : error instanceof Error ? error.message : error
+    })
   }
-);
+})
+
+
+
 
 authRoutes.delete("/deactivate/:userId", authMiddleware, async (c) => {
   try {

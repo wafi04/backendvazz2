@@ -10,6 +10,8 @@ import {
 } from "../../types/user";
 import { SessionService } from "./session";
 import { TokenService } from "./verificationToken";
+import { PaginationUtil } from "../../utils/pagination";
+import { Prisma } from "@prisma/client";
 
 export class AuthService {
   private readonly JWT_SECRET: string;
@@ -58,7 +60,7 @@ export class AuthService {
         id: true,
         name: true,
         username: true,
-        isOnline :  true,
+        isOnline: true,
         createdAt: true,
         balance: true,
         role: true,
@@ -74,94 +76,93 @@ export class AuthService {
   /**
    * Login user
    */
- async login(input: LoginInput): Promise<AuthResponse> {
-  const { username, password } = input;
+  async login(input: LoginInput): Promise<AuthResponse> {
+    const { username, password } = input;
 
-  // Find user
-  const user = await prisma.user.findUnique({
-    where: { username },
-    select: {
-      id: true,
-      name: true,
-      username: true,
-      isOnline: true,
-      password: true,
-      role: true,
-      whatsapp: true,
-      balance: true,
-    },
-  });
+    // Find user
+    const user = await prisma.user.findUnique({
+      where: { username },
+      select: {
+        id: true,
+        name: true,
+        username: true,
+        isOnline: true,
+        password: true,
+        role: true,
+        whatsapp: true,
+        balance: true,
+      },
+    });
 
-  if (!user) {
-    throw new Error("Invalid credentials");
-  }
+    if (!user) {
+      throw new Error("Invalid credentials");
+    }
 
-  // Verify password
-  const isValidPassword = compareSync(password, user.password);
-  if (!isValidPassword) {
-    throw new Error("Invalid credentials");
-  }
+    // Verify password
+    const isValidPassword = compareSync(password, user.password);
+    if (!isValidPassword) {
+      throw new Error("Invalid credentials");
+    }
 
-  const sessionId = GenerateRandomId(user.username);
+    const sessionId = GenerateRandomId(user.username);
 
-  // ✅ Generate token pair
-  const tokenPair = await this.tokenService.generateTokenPair({
-    sessionId,
-    username: user.username,
-    role: user.role
-  });
-
-  // ✅ Create session dengan both tokens
-  await this.sessionService.Create(prisma, {
-    deviceInfo: input.deviceInfo,
-    sessionId,
-    ip: input.ip,
-    token : tokenPair.accessToken,
-    userAgent: input.userAgent,
-    username: user.username
-  });
-
-  return {
-    message: "Login successful",
-    user: {
-      id: user.id,
-      name: user.name,
+    // ✅ Generate token pair
+    const tokenPair = await this.tokenService.generateTokenPair({
+      sessionId,
       username: user.username,
       role: user.role,
-      isOnline: user.isOnline,
-      balance: user.balance,
-      whatsapp: user.whatsapp,
-      createdAt: new Date(),
-    },
-    accessToken: tokenPair.accessToken,
-    refreshToken: tokenPair.refreshToken,
-  };
-}
+    });
+
+    // ✅ Create session dengan both tokens
+    await this.sessionService.Create(prisma, {
+      deviceInfo: input.deviceInfo,
+      sessionId,
+      ip: input.ip,
+      token: tokenPair.accessToken,
+      userAgent: input.userAgent,
+      username: user.username,
+    });
+
+    return {
+      message: "Login successful",
+      user: {
+        id: user.id,
+        name: user.name,
+        username: user.username,
+        role: user.role,
+        isOnline: user.isOnline,
+        balance: user.balance,
+        whatsapp: user.whatsapp,
+        createdAt: new Date(),
+      },
+      accessToken: tokenPair.accessToken,
+      refreshToken: tokenPair.refreshToken,
+    };
+  }
 
   /**
    * Get user profile by ID
    */
   async getUserProfile(sessionId: string) {
-    const user = await this.sessionService.GetSession(sessionId)
-    if(!user){
-      throw new Error("invalid credentials")
+    const user = await this.sessionService.GetSession(sessionId);
+    if (!user) {
+      throw new Error("invalid credentials");
     }
-    return user.user
+    return user.user;
   }
 
   /**
-   *  Refresh Token 
-  */
-  async RefreshToken(username : string, sessionId : string,role : string) {
-  
+   *  Refresh Token
+   */
+  async RefreshToken(username: string, sessionId: string, role: string) {
     const token = await this.tokenService.generateTokenPair({
       sessionId,
       username,
-      role
+      role,
     });
     return {
-      token
-    }
+      token,
+    };
   }
 
   /**
@@ -174,9 +175,9 @@ export class AuthService {
         id: true,
         name: true,
         username: true,
-        whatsapp : true,
+        whatsapp: true,
         createdAt: true,
-        isOnline : true,
+        isOnline: true,
         balance: true,
         role: true,
       },
@@ -217,7 +218,76 @@ export class AuthService {
       data: { password: hashedNewPassword },
     });
   }
+async GetAllUserWithSession(filters: {
+  limit?: number;
+  page?: number;
+  search?: string;
+  sort?: string;
+}) {
+  const { search, page = 1, limit = 10, sort = 'createdAt:desc' } = filters || {};
 
+  // Build where clause
+  const where: Prisma.UserWhereInput = {};
+  if (search) {
+    where.OR = [
+      { username: { contains: search, mode: 'insensitive' } },
+      { role: { contains: search, mode: 'insensitive' } },
+    ];
+  }
+
+  // Parse sort parameter
+  const [sortField, sortOrder] = sort.split(':');
+  const orderBy = {
+    [sortField || 'createdAt']: sortOrder === 'asc' ? 'asc' : 'desc'
+  };
+
+  const { skip, take, currentPage, itemsPerPage } = PaginationUtil.calculatePagination(
+    page.toString() ?? "1",
+    limit.toString() ?? "10"
+  );
+
+  // Use the same where clause for both queries
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        name: true,
+        createdAt: true,
+        updatedAt: true,
+        balance : true,
+        lastActiveAt : true,
+        lastPaymentAt : true,
+        isOnline : true,
+        session: {
+          select: {
+            id: true,
+            ip: true,
+            userAgent: true,
+            deviceInfo: true,
+            expires: true,
+            // Don't include sensitive session data if any
+          }
+        }
+      },
+      orderBy,
+      skip,
+      take,
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  const result = PaginationUtil.createPaginatedResponse(
+    users,
+    currentPage,
+    itemsPerPage,
+    total
+  );
+
+  return result;
+}
   /**
    * Regenerate API key for user
    */

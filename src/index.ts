@@ -64,19 +64,7 @@ app.get('/health', (c) => {
   });
 });
 
-// Socket stats endpoint
-app.get("/socket/stats", (c) => {
-  return c.json(wsManager.getStats());
-});
 
-// WebSocket users endpoint
-app.get("/socket/users", async (c) => {
-  const activeUsers = wsManager.getActiveUsers();
-  return c.json({
-    totalUsers: activeUsers.length,
-    activeUsers: activeUsers
-  });
-});
 
 // Root endpoint
 app.get("/", (c) => {
@@ -101,7 +89,6 @@ const io = wsManager.init(server);
 // Start server
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔌 WebSocket server initialized`);
   console.log(`🌐 Frontend URL: ${FRONTEND_URL}`);
   console.log(`📡 Environment: ${NODE_ENV}`);
 });
@@ -111,10 +98,7 @@ const gracefulShutdown = async (signal: string) => {
   console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
   
   try {
-    // Shutdown WebSocket manager
-    await wsManager.shutdown();
-    console.log("✅ WebSocket manager shut down");
-    
+   
     // Close HTTP server
     server.close(() => {
       console.log("✅ HTTP server closed");
@@ -150,5 +134,4 @@ export default {
   fetch: app.fetch,
   server,
   io,
-  wsManager
 };
