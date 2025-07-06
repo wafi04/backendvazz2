@@ -63,7 +63,16 @@ depositRoute.post("/", authMiddleware, async (c) => {
 // Route untuk mendapatkan semua deposit (hanya admin yang bisa akses)
 depositRoute.get("/all", authMiddleware, adminMiddleware, async (c) => {
   try {
-    const deposits = await deposit.getAllDepositUser();
+    const {limit,page,status,search}= c.req.query()
+    
+    const deposits = await deposit.getAllDepositUser({
+      data: {
+        limit: parseInt(limit as string),
+        page: parseInt(page as string),
+        status: status,
+        search : search
+      }
+    });
     
     return c.json({
         success: true,

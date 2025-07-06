@@ -86,9 +86,7 @@ authRoutes.post(
         data: result.user
       });
       
-    } catch (error) {
-      console.error("Login error:", error);
-      
+    } catch (error) {      
       if (error instanceof Error) {
         switch (error.message) {
           case "Invalid credentials":
@@ -120,9 +118,7 @@ authRoutes.post(
             }, 500);
         }
       }
-      
-      // Fallback for unknown errors
-      return c.json({
+        return c.json({
         success: false,
         message: "Internal server error"
       }, 500);
@@ -270,7 +266,6 @@ authRoutes.post("/logout", authMiddleware, async (c) => {
   }
 });
 
-// 5. Tambahkan endpoint untuk refresh token (optional)
 authRoutes.post("/refresh", authMiddleware, async (c) => {
   try {
     const user = c.get("jwtPayload") as { username: string; role: string, sessionId: string }
@@ -287,6 +282,29 @@ authRoutes.post("/refresh", authMiddleware, async (c) => {
     throw new HTTPException(500, { message: "Token refresh failed" });
   }
 });
+
+
+authRoutes.patch('/update/profile',authMiddleware,adminMiddleware,async (c) => {
+  try {
+    const {name,balance,role,username} = await c.req.json()
+    const updatedUser = await authService.UpdateUserByAdmin({
+      name,
+      username,
+      balance,
+      role,
+    });
+    return c.json({
+      success: true,
+      message: "User profile updated successfully",
+      data: updatedUser
+    })
+  }
+  catch (error) {
+    if (error instanceof HTTPException) throw error;
+    console.error("Update user profile error:", error);
+    throw new HTTPException(500, { message: "Failed to update user profile" });
+  }
+})
 
 
 export default authRoutes;

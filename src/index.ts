@@ -98,13 +98,10 @@ const gracefulShutdown = async (signal: string) => {
   console.log(`\n🛑 Received ${signal}, shutting down gracefully...`);
   
   try {
-   
-    // Close HTTP server
     server.close(() => {
       console.log("✅ HTTP server closed");
     });
     
-    // Disconnect database
     await prisma.$disconnect();
     console.log("✅ Database disconnected");
     

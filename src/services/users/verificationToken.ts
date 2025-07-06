@@ -7,7 +7,7 @@ interface TokenPair {
 
 export class TokenService {
   private jwtSecret = process.env.JWT_SECRET!;
-  private refreshSecret = process.env.REFRESH_TOKEN_SECRET!; // Beda secret!
+  private refreshSecret = process.env.REFRESH_TOKEN_SECRET!; 
   
   async generateTokenPair(payload: {
     sessionId: string;
@@ -20,7 +20,7 @@ export class TokenService {
       {
         ...payload,
         type: 'access',
-        exp: Math.floor(Date.now() / 1000) + (30 * 60), // 30 menit
+        exp: Math.floor(Date.now() / 1000) + (30 * 60), 
       },
       this.jwtSecret
     );
@@ -31,7 +31,7 @@ export class TokenService {
         sessionId: payload.sessionId,
         username: payload.username,
         type: 'refresh',
-        exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), // 7 hari
+        exp: Math.floor(Date.now() / 1000) + (7 * 24 * 60 * 60), 
       },
       this.refreshSecret
     );

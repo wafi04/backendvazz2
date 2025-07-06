@@ -218,6 +218,8 @@ export class AuthService {
       data: { password: hashedNewPassword },
     });
   }
+
+
 async GetAllUserWithSession(filters: {
   limit?: number;
   page?: number;
@@ -257,7 +259,8 @@ async GetAllUserWithSession(filters: {
         name: true,
         createdAt: true,
         updatedAt: true,
-        balance : true,
+        balance: true,
+        whatsapp : true,
         lastActiveAt : true,
         lastPaymentAt : true,
         isOnline : true,
@@ -268,7 +271,6 @@ async GetAllUserWithSession(filters: {
             userAgent: true,
             deviceInfo: true,
             expires: true,
-            // Don't include sensitive session data if any
           }
         }
       },
@@ -338,13 +340,33 @@ async GetAllUserWithSession(filters: {
   /**
    * Soft delete user (deactivate)
    */
-  async deactivateUser(userId: number): Promise<void> {
-    await prisma.user.update({
+async deactivateUser(userId: number): Promise<void> {
+  await prisma.user.update({
       where: { id: userId },
       data: {
         role: "inactive",
         updatedAt: new Date(),
       },
     });
+}
+  
+  async UpdateUserByAdmin(data: {
+    name: string,
+    username : string
+    balance: number,
+    role : string
+  }) {
+    const { name, username, balance, role } = data;
+    const user = await prisma.user.update({
+      where: { username },
+      data: {
+        name,
+        balance,
+        role,
+      }
+    })
+    return user;
   }
 }
+
+
