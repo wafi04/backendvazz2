@@ -276,7 +276,6 @@ export class ManualTransactions {
                 }
             };
         } catch (error) {
-            console.error('Get all manual transactions error:', error);
             throw error;
         }
     }

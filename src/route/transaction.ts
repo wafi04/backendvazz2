@@ -98,7 +98,6 @@ transaction.post("/retransactions", authMiddleware, adminMiddleware, async (c) =
             data: result
         });
     } catch (error) {
-        console.error("Route error:", error);
         return c.json({
             success: true,
             message: "Transaction failed successfully",
@@ -130,7 +129,7 @@ transaction.post("/order", async (c) => {
   } catch (error) {
     console.error("Route error:", error);
     return c.json({
-      success: false, // Fix: should be false for error
+      success: false, 
       message: "Transaction failed",
       error: error instanceof Error ? error.message : 'Unknown error'
     }, 500);
@@ -139,7 +138,7 @@ transaction.post("/order", async (c) => {
 
 
 
-transaction.get("/manual/retransactions", authMiddleware, adminMiddleware, async (c) => {
+transaction.get("/retransactions", authMiddleware, adminMiddleware, async (c) => {
     try {
         const result = await manualTransactons.GetAll(
             {
@@ -151,7 +150,6 @@ transaction.get("/manual/retransactions", authMiddleware, adminMiddleware, async
             }
           
         )
-        console.log(result)
         return c.json({
             success: true,
             message: "Transaction retreived successfully",
@@ -164,5 +162,6 @@ transaction.get("/manual/retransactions", authMiddleware, adminMiddleware, async
         });
     }
 });
+
 
 export default transaction

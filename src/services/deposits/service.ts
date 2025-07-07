@@ -57,7 +57,7 @@ export class DepositService {
         }
 const [vouchers, total] = await Promise.all([
       prisma.deposit.findMany({
-          where,
+        where,
         orderBy: {
           createdAt: "desc",
         },
