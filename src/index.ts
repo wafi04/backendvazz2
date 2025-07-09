@@ -83,9 +83,6 @@ app.get("/", (c) => {
 // Create HTTP server
 const server = createServer();
 
-// Initialize WebSocket
-const io = wsManager.init(server);
-
 // Start server
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
@@ -129,6 +126,5 @@ process.on("unhandledRejection", (reason, promise) => {
 export default {
   port: PORT,
   fetch: app.fetch,
-  server,
-  io,
+  server
 };
