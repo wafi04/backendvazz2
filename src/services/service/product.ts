@@ -96,7 +96,7 @@ async getServiceByCategory(categoryId: string, subCategoryId?: string, role?: st
             note: true,
             providerId : true
         },
-        orderBy: { serviceName: 'asc' }
+        orderBy: { price: 'asc' }
     });
 
     // Separate flash sale and regular services

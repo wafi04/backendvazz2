@@ -164,7 +164,7 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                 }
 
                 totalAmount = method.totalAmount;
-                fee = method.methodTax ?? 0;
+                fee =  methodCode === "NQ" ? 0.007 : 0;
                 feeRupiah = method.taxAmount;
                 profitAmount = calculatePricing.profitRupiah - method.taxAmount;
 
@@ -174,7 +174,7 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                     paymentCode: methodCode,
                     merchantOrderId: orderId,
                     productDetails: product.serviceName,
-                    callbackUrl: `${BASE_URL}/callback/duitku`,
+                    callbackUrl: `https://926ee8528bc5.ngrok-free.app/api/v1/callback/duitku`,
                     returnUrl: `${FRONTEND_URL}/invoice?invoice=${orderId}`,
                     cust: user?.username,
                     noWa: whatsAppNumber,
@@ -222,6 +222,7 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                         createdAt: new Date(),
                     },
                 });
+
 
                 // Create transaction record
                 await tx.transaction.create({

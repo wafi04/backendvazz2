@@ -3,8 +3,6 @@ import * as crypto from 'crypto';
 import { ProductService } from '../services/service/product';
 import { ResponseFromDigiflazz } from '../types/digiflazz';
 
-
-
 interface TopUpRequest {
   userId: string;
   serverId?: string;
@@ -53,7 +51,6 @@ export class Digiflazz {
 
   async TopUp(topUpData: TopUpRequest) {
     try {
-      const trx_id = `TRX-${Date.now()}`;
 
       const signature = crypto
         .createHash('md5')
@@ -76,7 +73,6 @@ export class Digiflazz {
         buyer_sku_code: topUpData.productCode,
         customer_no: customerNo,
         ref_id: topUpData.reference,
-        trx_id,
         sign: signature,
       };
 
@@ -90,8 +86,10 @@ export class Digiflazz {
         body: JSON.stringify(data),
       });
 
-      const result: ResponseFromDigiflazz = await response.json();
-
+      
+      
+      
+      const result: ResponseFromDigiflazz = await response.json()
       return result;
     } catch (error) {
       if (error instanceof Error) {

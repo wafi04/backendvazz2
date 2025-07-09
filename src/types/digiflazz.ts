@@ -4,6 +4,8 @@ export interface ResponseFromDigiflazz {
     ref_id: string;
     customer_no: string;
     buyer_sku_code: string;
+    buyer_last_saldo: number,
+    price: number,
     message: string;
     status: string;
     trx_id  : string
