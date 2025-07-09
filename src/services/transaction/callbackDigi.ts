@@ -1,5 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "../../lib/prisma";
+import { AdminTransactionLogger } from "../../lib/logger";
 
 interface TransactionData {
   id: number;
@@ -34,7 +35,8 @@ interface ServiceResponse {
 export class DigiflazzCallbackService {
   static async processCallback(callbackData: CallbackData): Promise<ServiceResponse> {
     let referenceId: string = "UNKNOWN";
-
+    const logger = new AdminTransactionLogger();
+    
     try {
       // Validasi data callback yang diterima
       if (!callbackData || !callbackData.data) {
@@ -45,7 +47,9 @@ export class DigiflazzCallbackService {
         };
       }
 
-      const { ref_id,  status, message, sn } = callbackData.data;
+      console.log(callbackData.data ?? callbackData);
+
+      const { ref_id, status, message, sn } = callbackData.data;
 
       if (!ref_id) {
         return {
@@ -56,6 +60,15 @@ export class DigiflazzCallbackService {
       }
 
       referenceId = ref_id;
+
+      await logger.logTransaction({
+        orderId: ref_id,
+        transactionType: 'CALLBACK',
+        status: 'SUCCESS',
+        position: "CALLBACK DIGIFLAZZ",
+        data: { message: "Callback Digiflazz", data: callbackData.data },
+        timestamp: new Date(),
+      });
 
       const normalizedStatus = status ? status.trim().toLowerCase() : "";
       const purchaseStatus = normalizedStatus === "sukses" ? "SUCCESS" : "FAILED";
@@ -100,28 +113,28 @@ export class DigiflazzCallbackService {
             logMessage = messageLogs("SUCCESS", `SN/Kode Voucher: ${sn}`);
           }
           else if (purchaseStatus === "FAILED" && pembelian.username) {
-            const user = await tx.transaction.findFirst({
-              where: {
-                username: pembelian.username as string,
+            const harga = typeof pembelian.price === "string" 
+              ? parseInt(pembelian.price, 10) 
+              : pembelian.price;
+              
+            const user = await tx.user.findUnique({
+              where: { username: pembelian.username },
+              select: {
+                id: true,
               },
             });
 
-            if (user && pembelian) {
-              const harga =
-                typeof pembelian.price === "string"
-                  ? parseInt(pembelian.price, 10)
-                  : pembelian.price;
-
+            if (user) {
               await tx.user.update({
                 where: { id: user.id },
                 data: {
                   balance: { increment: harga },
                 },
               });
-              logMessage = messageLogs("FAILED");
+              logMessage = messageLogs("FAILED", "Saldo telah otomatis dikembalikan ke akun");
               refundProcessed = true;
-            } else if (!user) {
-              logMessage = messageLogs("FAILED");
+            } else {
+              logMessage = messageLogs("FAILED", "User tidak ditemukan, refund tidak dapat diproses");
             }
           }
 
@@ -130,14 +143,13 @@ export class DigiflazzCallbackService {
             data: {
               status: purchaseStatus,
               serialNumber: sn || null,
-              log: logMessage,
-              message : logMessage,
+              log: JSON.stringify(callbackData.data),
+              message: logMessage,
               updatedAt: new Date(),
             },
           });
 
-
-          if (purchaseStatus === "SUCCESS" && !pembelian.successReportSent) {
+          if (purchaseStatus === "SUCCESS" && pembelian.successReportSent !== "DONE") {
             await tx.transaction.update({
               where: { id: pembelian.id },
               data: { successReportSent: "DONE" },
@@ -149,6 +161,9 @@ export class DigiflazzCallbackService {
             message: "Callback processed successfully",
             data: {
               ...pembelian,
+              refundProcessed,
+              finalStatus: purchaseStatus,
+              logMessage,
             },
           };
         },
@@ -161,6 +176,20 @@ export class DigiflazzCallbackService {
 
       return result;
     } catch (error) {
+      // Log error untuk debugging
+      await logger.logTransaction({
+        orderId: referenceId,
+        transactionType: 'ERROR',
+        status: 'ERROR',
+        position: "CALLBACK DIGIFLAZZ ERROR",
+        data: { 
+          message: "Error processing callback", 
+          error: error instanceof Error ? error.message : "Unknown error",
+          callbackData: callbackData.data 
+        },
+        timestamp: new Date(),
+      });
+
       return {
         success: false,
         message: error instanceof Error ? error.message : "System error",
@@ -172,20 +201,19 @@ export class DigiflazzCallbackService {
   }
 }
 
-
-
 export type message = "PENDING" | "PAID" | "FAILED" | "SUCCESS";
+
 export function messageLogs(message: message, ket?: string): string {
   switch (message) {
     case "PENDING":
       return "Pembelian Masih Pending";
     case "FAILED":
-      return `Transaksi Gagal,${
-        ket ? ket : "Saldo telah otomatis Jadi Saldo Akun"
-      }`;
+      return `Transaksi Gagal${ket ? `, ${ket}` : ", Saldo telah otomatis dikembalikan ke akun"}`;
     case "PAID":
       return "Transaksi Telah Dibayar";
     case "SUCCESS":
-      return `Transaksi Berhasil ${ket}`;
+      return `Transaksi Berhasil${ket ? ` - ${ket}` : ""}`;
+    default:
+      return "Status tidak dikenali";
   }
 }

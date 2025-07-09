@@ -67,13 +67,14 @@ export class Digiflazz {
       } else  {
         customerNo = userId;
       } 
-
+      console.log(topUpData.productCode)
       const data = {
         username: this.username,
-        buyer_sku_code: topUpData.productCode,
+        buyer_sku_code: "CHECKIDS",
         customer_no: customerNo,
         ref_id: topUpData.reference,
         sign: signature,
+        cb_url : 'https://0ee17297ce92.ngrok-free.app/api/v1/callback/digiflazz'
       };
 
 

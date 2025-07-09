@@ -5,7 +5,7 @@ import { TransactionLog } from '../types/transaction.logger';
 // Interface untuk filter options
 export interface FilterOptions {
   orderId?: string;
-  transactionType?: 'CREATE' | 'UPDATE' | 'PAYMENT' | 'PROCESS' | 'CALLBACK' | 'ERROR';
+  transactionType?: 'CREATE' | 'UPDATE' | 'PAYMENT' | 'PROCESS' | 'CALLBACK' | 'ERROR' | 'BLOCKED'
   status?: string;
   userId?: string;
   productCode?: string;

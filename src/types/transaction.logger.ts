@@ -1,6 +1,6 @@
 export interface TransactionLog {
     orderId: string;
-    transactionType: 'CREATE' | 'UPDATE' | 'PAYMENT' | 'PROCESS' | 'CALLBACK' | 'ERROR' | "REFUND";
+    transactionType: 'CREATE' | 'UPDATE' | 'PAYMENT' | 'PROCESS' | 'CALLBACK' | 'ERROR' | "REFUND" | "BLOCKED";
     status: string;
     userId?: string;
     productCode?: string;

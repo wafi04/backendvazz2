@@ -41,9 +41,9 @@ interface ServiceResponse<T = any> {
   statusCode: number;
 }
 
-// Service Class
 export class DuitkuCallbackService {
   private digiflazz: Digiflazz;
+  private readonly DIGIFLAZZ_TIMEOUT = 45000; 
 
   constructor(digiUsername: string, digiKey: string) {
     this.digiflazz = new Digiflazz(digiUsername, digiKey);
@@ -62,12 +62,64 @@ export class DuitkuCallbackService {
     return missingFields;
   }
 
+
+  private async checkDigiflazzProcessed(orderId: string): Promise<boolean> {
+    const transaction = await prisma.transaction.findUnique({
+      where: { orderId },
+      select: { refId: true, status: true }
+    });
+
+    return !!(transaction?.refId && transaction.refId !== "");
+  }
+
+  // Digiflazz API call dengan timeout dan error handling
+  private async callDigiflazzWithTimeout(topUpParams: any): Promise<any> {
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('Digiflazz API timeout after 45 seconds')), this.DIGIFLAZZ_TIMEOUT);
+    });
+
+    try {
+      const result = await Promise.race([
+        this.digiflazz.TopUp(topUpParams),
+        timeoutPromise
+      ]);
+      
+      return result;
+    } catch (error) {
+      console.error('Digiflazz API Error:', error);
+      throw error;
+    }
+  }
+
+  // STRICT: Handle TopUp dengan fail-fast approach
   private async handleTopUpTransaction(
     tx: Prisma.TransactionClient,
     transaction: Transaction,
     callbackData: CallbackData
   ): Promise<TransactionResult> {
-    const logger = new AdminTransactionLogger()
+    const logger = new AdminTransactionLogger();
+
+    // CRITICAL: Check double processing prevention
+    const isAlreadyProcessed = await this.checkDigiflazzProcessed(transaction.orderId);
+    if (isAlreadyProcessed) {
+      await logger.logTransaction({
+        orderId: transaction.orderId,
+        transactionType: 'BLOCKED',
+        status: 'BLOCKED',
+        userId: transaction.userId as string,
+        position: "BEFORE_DIGIFLAZZ",
+        productCode: transaction.providerOrderId as string,
+        data: { message: "Transaction already processed, preventing double hit" },
+        timestamp: new Date(),
+      });
+
+      return {
+        type: "error",
+        message: "Transaction already processed to Digiflazz",
+        data: { orderId: transaction.orderId, status: "ALREADY_PROCESSED" },
+      };
+    }
+
     const topUpParams = {
       productCode: transaction.providerOrderId as string,
       reference: transaction.orderId,
@@ -75,123 +127,161 @@ export class DuitkuCallbackService {
       serverId: transaction.zone as string,
     };
 
-    const toDigi = await this.digiflazz.TopUp(topUpParams);
+    // Set status ke PROCESSING sebelum hit Digiflazz
+    await tx.transaction.update({
+      where: { orderId: transaction.orderId },
+      data: {
+        status: "PROCESS",
+        message: "Sedang memproses Pesanan",
+        log: JSON.stringify({ ...callbackData, step: "before_digiflazz" }),
+      },
+    });
 
+    let toDigi: any;
+    try {
+      // SYNCHRONOUS: Hit Digiflazz dalam transaction
+      toDigi = await this.callDigiflazzWithTimeout(topUpParams);
+    } catch (error) {
+      // FAIL FAST: Jika Digiflazz error, langsung fail
+      const errorMessage = error instanceof Error ? error.message : "Digiflazz API Error";
+      
+      await tx.transaction.update({
+        where: { orderId: transaction.orderId },
+        data: {
+          status: "FAILED",
+          message: `Digiflazz Error: ${errorMessage}`,
+          log: JSON.stringify({ 
+            ...callbackData, 
+            error: errorMessage,
+            step: "digiflazz_error"
+          }),
+        },
+      });
+
+      // Refund balance jika ada username
+      if (transaction.username) {
+        await tx.user.update({
+          where: { username: transaction.username },
+          data: {
+            balance: { increment: transaction.price },
+          },
+        });
+      }
+
+      // Log error
+      await logger.logTransaction({
+        orderId: transaction.orderId,
+        transactionType: 'ERROR',
+        status: 'FAILED',
+        userId: transaction.userId as string,
+        position: "DIGIFLAZZ_ERROR",
+        productCode: transaction.providerOrderId as string,
+        data: { error: errorMessage },
+        timestamp: new Date(),
+      });
+
+      return {
+        type: "error",
+        message: `Digiflazz processing failed: ${errorMessage}`,
+        data: { orderId: transaction.orderId, error: errorMessage },
+      };
+    }
+
+    // Process hasil dari Digiflazz
     if (toDigi && toDigi?.data) {
       if (toDigi.data.status === "Pending" || toDigi.data.status === "Success") {
         const log = {
           ...toDigi.data,
-          message: "Pesanan Sedang Dalam Pemrosesan",
+          message: "Pesanan Berhasil Diproses ke Digiflazz",
         };
 
         await tx.transaction.update({
           where: { orderId: transaction.orderId },
           data: {
-            purchasePrice : toDigi.data.price,
+            purchasePrice: toDigi.data.price,
             refId: toDigi.data.ref_id,
-            log: JSON.stringify(toDigi.data),
+            log: JSON.stringify(log),
             message: log.message,
-            status: "PROCESS",
+            status: "SUCCESS",
           },
         });
 
         await SyncBalanceWithUpsert({
-          amount : toDigi.data.price,
-          orderId : transaction.orderId,
-          paymentMethod : "FROM DIGI",
-          platformName : "Digiflazz",
+          amount: toDigi.data.price,
+          orderId: transaction.orderId,
+          paymentMethod: "FROM DIGI",
+          platformName: "Digiflazz",
           tx
-        })
-        
+        });
+
+        // Log success
         await logger.logTransaction({
-            orderId : transaction.orderId,
-            transactionType: 'PROCESS',
-            status: 'PROCESS',
-            userId: transaction.userId as string,
-            position : "AFTER DIGIFLAZZ",
-            productCode : transaction.providerOrderId as string,
-            data: toDigi.data,
-            timestamp: new Date(),
+          orderId: transaction.orderId,
+          transactionType: 'PROCESS',
+          status: 'SUCCESS',
+          userId: transaction.userId as string,
+          position: "AFTER_DIGIFLAZZ",
+          productCode: transaction.providerOrderId as string,
+          data: toDigi.data,
+          timestamp: new Date(),
         });
 
         return {
           type: "success",
-          message: "Create Transaction to duitku successfully",
+          message: "TopUp berhasil diproses ke Digiflazz",
           data: toDigi,
         };
       } else {
+        // Digiflazz return failed status
+        await tx.transaction.update({
+          where: { orderId: transaction.orderId },
+          data: {
+            log: JSON.stringify(toDigi.data),
+            message: "Pesanan Gagal di Digiflazz, Saldo Sudah Dikembalikan",
+            status: "FAILED",
+          },
+        });
+
+        // Refund balance jika ada username
         if (transaction.username) {
-          await tx.transaction.update({
-            where: { orderId: transaction.orderId },
-            data: {
-              log: JSON.stringify(toDigi.data),
-              message: "Pesanan Anda Gagal,Uang Anda Sudah Masuk Saldo Akun",
-              status: "FAILED",
-            },
-          });
-          
-          // Refund to user balance
           await tx.user.update({
             where: { username: transaction.username },
             data: {
               balance: { increment: transaction.price },
             },
           });
-          
-        await logger.logTransaction({
-            orderId : transaction.orderId,
-            transactionType: 'ERROR',
-            status: 'FAILED',
-            userId: transaction.userId as string,
-            position : "AFTER DIGIFLAZZ",
-            productCode : transaction.providerOrderId as string,
-            data: toDigi.data,
-            timestamp: new Date(),
-        });
-          
-          return {
-            type: "error",
-            message: "Order Failed,Silahkan Hubungi Admin",
-            data: transaction,
-          };
-        } else {
-    
-          await tx.transaction.update({
-            where: { orderId: transaction.orderId },
-            data: {
-              log: JSON.stringify(toDigi.data),
-              message: "Pesanan Anda Gagal,Silahkan Hubungi Admin",
-              status: "FAILED",
-            },
-          });
-           await logger.logTransaction({
-            orderId : transaction.orderId,
-            transactionType: 'ERROR',
-            status: 'FAILED',
-            userId: transaction.userId as string,
-            position : "AFTER DIGIFLAZZ",
-            productCode : transaction.providerOrderId as string,
-            data: toDigi.data,
-            timestamp: new Date(),
-        });
-          
-          return {
-            type: "error",
-            message: "Order Failed,Silahkan Hubungi Admin",
-            data: transaction,
-          };
         }
+
+        // Log failed
+        await logger.logTransaction({
+          orderId: transaction.orderId,
+          transactionType: 'ERROR',
+          status: 'FAILED',
+          userId: transaction.userId as string,
+          position: "DIGIFLAZZ_REJECTED",
+          productCode: transaction.providerOrderId as string,
+          data: toDigi.data,
+          timestamp: new Date(),
+        });
+
+        return {
+          type: "error",
+          message: "TopUp ditolak oleh Digiflazz, balance sudah dikembalikan",
+          data: toDigi,
+        };
       }
     }
-    
-    throw new Error("Failed to process top-up transaction");
+
+    // Jika sampai sini berarti response Digiflazz tidak valid
+    throw new Error("Invalid response from Digiflazz");
   }
 
   // Handle DEPOSIT transaction
   private async handleDepositTransaction(
     tx: Prisma.TransactionClient,
     transaction: Transaction,
-    amount: number
+    amount: number,
+    feeAmount: number
   ): Promise<TransactionResult> {
     const deposit = await tx.deposit.update({
       where: { depositId: transaction.orderId },
@@ -201,8 +291,16 @@ export class DuitkuCallbackService {
     await tx.user.update({
       where: { username: deposit.username },
       data: {
-        balance: { increment: parseInt(amount.toString()) },
+        balance: { increment: amount },
       },
+    });
+
+    await SyncBalanceWithUpsert({
+      amount: transaction.price - feeAmount,
+      orderId: transaction.orderId,
+      paymentMethod: "test",
+      platformName: "Saldo Member",
+      tx
     });
 
     return {
@@ -211,14 +309,14 @@ export class DuitkuCallbackService {
     };
   }
 
-  // Handle MEMBERSHIP transaction
   private async handleMembershipTransaction(
     tx: Prisma.TransactionClient,
     transaction: Transaction,
-    amount: number
+    amount: number,
+    tax: number
   ): Promise<TransactionResult> {
     const membershipFields: Membership | null = await tx.membership.findFirst({
-      where: { price: parseInt(amount.toString()) },
+      where: { price: amount },
     });
 
     if (membershipFields && transaction.username) {
@@ -236,10 +334,11 @@ export class DuitkuCallbackService {
     };
   }
 
-  // Main process method
+  // STRICT: Main process method dengan fail-fast
   async processCallback(callbackData: CallbackData): Promise<ServiceResponse> {
+    const logger = new AdminTransactionLogger();
+    
     try {
-      const logger = new AdminTransactionLogger()
       // Validate input
       const missingFields = this.validateCallbackData(callbackData);
       if (missingFields.length > 0) {
@@ -251,8 +350,9 @@ export class DuitkuCallbackService {
         };
       }
 
-      const { merchantOrderId,  amount } = callbackData;
-      // Process transaction
+      const { merchantOrderId, amount } = callbackData;
+
+      // Process dalam single transaction (ALL OR NOTHING)
       const result: TransactionResult = await prisma.$transaction(async (tx) => {
         // Find transaction
         const transaction: Transaction | null = await tx.transaction.findUnique({
@@ -271,17 +371,38 @@ export class DuitkuCallbackService {
         if (!transaction) {
           throw new Error("Transaction not found");
         }
-         await logger.logTransaction({
-            orderId : transaction.orderId,
-            transactionType: 'PAYMENT',
-            status: 'PAID',
-            userId: transaction.userId ?? "" as string,
-            position : "AFTER DIGIFLAZZ",
-            productCode : transaction.providerOrderId ?? "" as string,
-            data: callbackData,
-            timestamp: new Date(),
+
+        // Check if payment already processed
+        const existingPayment = await tx.payment.findUnique({
+          where: { orderId: merchantOrderId },
         });
 
+        if (existingPayment?.status === "PAID") {
+          throw new Error("Payment already processed");
+        }
+
+        // Log payment received
+        await logger.logTransaction({
+          orderId: transaction.orderId,
+          transactionType: 'PAYMENT',
+          status: 'PAID',
+          userId: transaction.userId ?? "",
+          position: "CALLBACK_RECEIVED",
+          productCode: transaction.providerOrderId ?? "",
+          data: callbackData,
+          timestamp: new Date(),
+        });
+
+        // Update payment status
+        const payment = await tx.payment.update({
+          where: { orderId: merchantOrderId },
+          data: {
+            status: "PAID",
+            updatedAt: new Date(),
+          },
+        });
+
+        // Update transaction payment status
         await tx.transaction.update({
           where: { orderId: merchantOrderId },
           data: {
@@ -291,69 +412,93 @@ export class DuitkuCallbackService {
           },
         });
 
-        // Update payment status
-       const payment =  await tx.payment.update({
-          where: { orderId: merchantOrderId },
-          data: {
-            status: "PAID",
-            updatedAt: new Date(),
-          },
+        // Sync balance
+        await SyncBalanceWithUpsert({
+          amount: transaction.price - (payment.feeAmount ?? 0),
+          orderId: merchantOrderId,
+          paymentMethod: payment.method,
+          platformName: "Duitku",
+          tx
         });
 
-
-        await SyncBalanceWithUpsert({
-          amount : transaction.price - (payment.feeAmount ?? 0),
-          orderId : merchantOrderId,
-          paymentMethod :  payment.method,
-          platformName : "Duitku",
-          tx
-        })
-
+        // Process berdasarkan transaction type
         switch (transaction.transactionType) {
           case "TOPUP":
             return await this.handleTopUpTransaction(tx, transaction, callbackData);
           
           case "DEPOSIT":
-            return await this.handleDepositTransaction(tx, transaction, amount);
+            return await this.handleDepositTransaction(tx, transaction, amount, payment.feeAmount ?? 0);
           
           default:
-            return await this.handleMembershipTransaction(tx, transaction, amount);
+            return await this.handleMembershipTransaction(tx, transaction, amount, payment.feeAmount ?? 0);
         }
+      }, {
+        timeout: 60000, 
       });
 
-      if (result.type === "success") {
-        return {
-          success: true,
-          message: result.message,
-          data: result.data,
-          statusCode: 201,
-        };
-      } else {
-        return {
-          success: false,
-          message: result.message,
-          data: result.data,
-          statusCode: 400,
-        };
-      }
+      // Return response berdasarkan hasil
+      return {
+        success: result.type === "success",
+        message: result.message,
+        data: result.data,
+        statusCode: result.type === "success" ? 200 : 400,
+      };
 
     } catch (error: unknown) {
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      
+      // Log error
+      logger.logTransaction({
+        orderId: callbackData.merchantOrderId,
+        transactionType: 'ERROR',
+        status: 'ERROR',
+        userId: "",
+        position: "CALLBACK_ERROR",
+        productCode: "",
+        data: { error: errorMessage },
+        timestamp: new Date(),
+      }).catch(console.error);
+
       return {
         success: false,
         message: "Error processing callback",
-        data: { error: error instanceof Error ? error.message : "Unknown error" },
+        data: { error: errorMessage },
         statusCode: 500,
       };
     }
   }
+
+  // Helper method untuk manual check double processing
+  async checkTransactionStatus(orderId: string): Promise<{
+    isProcessed: boolean;
+    hasRefId: boolean;
+    status: string;
+    refId: string | null;
+  }> {
+    const transaction = await prisma.transaction.findUnique({
+      where: { orderId },
+      select: { status: true, refId: true }
+    });
+
+    if (!transaction) {
+      throw new Error("Transaction not found");
+    }
+
+    return {
+      isProcessed: !!(transaction.refId && transaction.refId !== ""),
+      hasRefId: !!(transaction.refId && transaction.refId !== ""),
+      status: transaction.status,
+      refId: transaction.refId,
+    };
+  }
 }
 
-// Factory function for easy instantiation
+// Factory function
 export function createDuitkuCallbackService(digiUsername: string, digiKey: string) {
   return new DuitkuCallbackService(digiUsername, digiKey);
 }
 
-// Helper function for parsing different content types
+// Parser classes remain the same
 export class CallbackDataParser {
   static async parseJSON(jsonData: any): Promise<CallbackData> {
     return {

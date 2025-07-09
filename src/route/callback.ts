@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { DIGI_KEY, DIGI_USERNAME } from "../constants";
 import { CallbackDataParser, DuitkuCallbackService } from "../services/transaction/callbackDuitku";
+import { DigiflazzCallbackService } from "../services/transaction/callbackDigi";
 
 const callbackRoute = new Hono();
 
@@ -29,5 +30,79 @@ callbackRoute.post("/duitku", async (c) => {
     data: result.data,
   },200);
 });
+
+callbackRoute.post('/digiflazz', async (c) => {
+  try {
+    console.log('=== DIGIFLAZZ CALLBACK STARTED ===');
+    
+    // Get request body
+    const requestBody = await c.req.json();
+    console.log('Raw callback data:', JSON.stringify(requestBody, null, 2));
+    
+    // Validate request body
+    if (!requestBody) {
+      console.error('Empty request body received');
+      return c.json({
+        success: false,
+        message: "Empty request body",
+        data: null
+      }, 400);
+    }
+    
+    // Determine the correct data structure
+    // Handle both formats: { data: {...} } and direct payload
+    const callbackData = requestBody.data ? requestBody : { data: requestBody };
+        
+    // Validate callback data structure
+    if (!callbackData.data || typeof callbackData.data !== 'object') {
+      console.error('Invalid callback data structure');
+      return c.json({
+        success: false,
+        message: "Invalid callback data structure",
+        data: null
+      }, 400);
+    }
+    
+    // Validate required fields
+    const { ref_id, status } = callbackData.data;
+    if (!ref_id || !status) {
+      return c.json({
+        success: false,
+        message: "Missing required fields: ref_id or status",
+        data: null
+      }, 400);
+    }
+    
+    // Process callback
+    const result = await DigiflazzCallbackService.processCallback(callbackData);
+    
+
+    // Return response with appropriate status code
+    const statusCode : any = result.success ? 200 : 500 
+    
+    return c.json({
+      success: result.success,
+      message: result.message,
+      data: result.data || null,
+    }, statusCode);
+    
+  } catch (error) {
+    console.error('=== DIGIFLAZZ CALLBACK ERROR ===');
+    console.error('Error details:', error);
+    
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    console.error('Error message:', errorMessage);
+    
+    return c.json({
+      success: false,
+      message: "Internal server error",
+      error: errorMessage,
+      data: null
+    }, 500);
+  }
+});
+
+
+
 
 export default callbackRoute

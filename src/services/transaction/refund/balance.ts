@@ -62,9 +62,6 @@ export async function SyncBalanceWithUpsert({ tx, orderId, amount, paymentMethod
             data: historyData
         })
 
-      
-
-
         const result = {
             success: true,
             platformName,

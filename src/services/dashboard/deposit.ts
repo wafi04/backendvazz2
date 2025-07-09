@@ -1,9 +1,7 @@
 import { prisma } from "../../lib/prisma";
 
 class DepositAnalyticsService {
-  
-  // 1. Analytics by Status dengan Default Range (Hari Ini)
-  async getTodayAnalytics() {
+    async getTodayAnalytics() {
     const result = await prisma.$queryRaw<any[]>`
       SELECT 
         status,
