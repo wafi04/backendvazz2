@@ -174,7 +174,7 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                     paymentCode: methodCode,
                     merchantOrderId: orderId,
                     productDetails: product.serviceName,
-                    callbackUrl: `https://58e65f6ab345.ngrok-free.app/api/v1/callback/duitku`,
+                    callbackUrl: process.env.DUITKU_CALLBACK_URL,
                     returnUrl: `${FRONTEND_URL}/invoice?invoice=${orderId}`,
                     cust: user?.username,
                     noWa: whatsAppNumber,
@@ -206,7 +206,6 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                     message: "Pembelian Pending",
                 };
 
-                // Create payment record
                 const payment = await tx.payment.create({
                     data: {
                         totalAmount: totalAmount,

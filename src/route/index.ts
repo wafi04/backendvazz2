@@ -14,7 +14,7 @@ import userAnalytics from "./userAnalytics"
 import balanceRoutes from "./balance"
 import transactionAdmin from "./anaylitics/transactionAnalytics"
 import callback from "./callback"
-
+import print from "./export"
 
 const routes =  new Hono()
 
@@ -32,7 +32,8 @@ routes.route('/admin',LoggerRoutes)
 routes.route('/admin/user', userAnalytics)
 routes.route('/balance', balanceRoutes)
 routes.route('/callback',callback)
-routes.route('/transactions',transactionAdmin)
+routes.route('/transactions', transactionAdmin)
+routes.route('/print',print)
 
 
 

@@ -7,10 +7,11 @@ const exportService = new ExportToExcel()
 
 
 
-exportRoutes.get("/pesanan",authMiddleware,adminMiddleware,async (c)  => {
+exportRoutes.get("/transactions",authMiddleware,adminMiddleware,async (c)  => {
 try {
-    const {createdAt,endDate,status,search} = c.req.query()
-    const transaction = await exportService.Transaction(createdAt,endDate,status,search)
+    const { startDate, endDate, status, search } = c.req.query()
+    console.log(c.req.query())
+    const transaction = await exportService.Transaction(startDate,endDate,status,search)
 
     return c.json({
         data : transaction,
@@ -49,7 +50,7 @@ try {
 
 
 
-exportRoutes.get("/member",authMiddleware,adminMiddleware,async (c)  => {
+exportRoutes.get("/members",authMiddleware,adminMiddleware,async (c)  => {
 try {
     const transaction = await exportService.MemberExport()
 
@@ -66,5 +67,8 @@ try {
     },500)
 }
 })
+
+
+export default exportRoutes
 
 

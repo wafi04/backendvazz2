@@ -74,7 +74,7 @@ export class Digiflazz {
         customer_no: customerNo,
         ref_id: topUpData.reference,
         sign: signature,
-        cb_url : 'https://58e65f6ab345.ngrok-free.app/api/v1/callback/digiflazz'
+        cb_url : process.env.DIGI_CALLBACK_URL
       };
 
 
