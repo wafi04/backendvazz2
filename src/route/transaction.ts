@@ -51,7 +51,7 @@ transaction.get("/", authMiddleware ,adminMiddleware,async (c) => {
 
 
 
-transaction.get("/:orderId", async (c) => {
+transaction.get("/invoice/:orderId", async (c) => {
     try {
         const orderId = c.req.param("orderId");
 

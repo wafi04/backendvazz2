@@ -127,16 +127,6 @@ export class DuitkuCallbackService {
       serverId: transaction.zone as string,
     };
 
-    // Set status ke PROCESSING sebelum hit Digiflazz
-    await tx.transaction.update({
-      where: { orderId: transaction.orderId },
-      data: {
-        status: "PROCESS",
-        message: "Sedang memproses Pesanan",
-        log: JSON.stringify({ ...callbackData, step: "before_digiflazz" }),
-      },
-    });
-
     let toDigi: any;
     try {
       // SYNCHRONOUS: Hit Digiflazz dalam transaction
@@ -202,12 +192,13 @@ export class DuitkuCallbackService {
             refId: toDigi.data.ref_id,
             log: JSON.stringify(log),
             message: log.message,
-            status: "SUCCESS",
+            status: "PROCESS",
           },
         });
 
         await SyncBalanceWithUpsert({
           amount: toDigi.data.price,
+          type : "descrease",
           orderId: transaction.orderId,
           paymentMethod: "FROM DIGI",
           platformName: "Digiflazz",
@@ -218,7 +209,7 @@ export class DuitkuCallbackService {
         await logger.logTransaction({
           orderId: transaction.orderId,
           transactionType: 'PROCESS',
-          status: 'SUCCESS',
+          status: 'PROCESS',
           userId: transaction.userId as string,
           position: "AFTER_DIGIFLAZZ",
           productCode: transaction.providerOrderId as string,

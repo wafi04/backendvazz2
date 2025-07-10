@@ -9,7 +9,6 @@ callbackRoute.post("/duitku", async (c) => {
   const service = new DuitkuCallbackService(DIGI_USERNAME, DIGI_KEY);
   const contentType = c.req.header("content-type") || "";
   let callbackData;
-  console.log('started callback data')
   if (contentType.includes("application/json")) {
     const jsonData = await c.req.json();
     callbackData = await CallbackDataParser.parseJSON(jsonData);
@@ -32,16 +31,12 @@ callbackRoute.post("/duitku", async (c) => {
 });
 
 callbackRoute.post('/digiflazz', async (c) => {
-  try {
-    console.log('=== DIGIFLAZZ CALLBACK STARTED ===');
-    
+  try {    
     // Get request body
     const requestBody = await c.req.json();
-    console.log('Raw callback data:', JSON.stringify(requestBody, null, 2));
     
     // Validate request body
     if (!requestBody) {
-      console.error('Empty request body received');
       return c.json({
         success: false,
         message: "Empty request body",
@@ -55,7 +50,6 @@ callbackRoute.post('/digiflazz', async (c) => {
         
     // Validate callback data structure
     if (!callbackData.data || typeof callbackData.data !== 'object') {
-      console.error('Invalid callback data structure');
       return c.json({
         success: false,
         message: "Invalid callback data structure",
@@ -87,12 +81,8 @@ callbackRoute.post('/digiflazz', async (c) => {
     }, statusCode);
     
   } catch (error) {
-    console.error('=== DIGIFLAZZ CALLBACK ERROR ===');
-    console.error('Error details:', error);
     
-    const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    console.error('Error message:', errorMessage);
-    
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";    
     return c.json({
       success: false,
       message: "Internal server error",

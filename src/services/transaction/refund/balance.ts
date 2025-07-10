@@ -7,9 +7,10 @@ type SyncBalance = {
     amount: number
     platformName: string
     paymentMethod: string
+    type? : string
 }
 
-export async function SyncBalanceWithUpsert({ tx, orderId, amount, paymentMethod, platformName }: SyncBalance) {
+export async function SyncBalanceWithUpsert({ tx, orderId, amount, paymentMethod, platformName,type }: SyncBalance) {
     const logger = new AdminTransactionLogger()
     
     try {
@@ -28,7 +29,7 @@ export async function SyncBalanceWithUpsert({ tx, orderId, amount, paymentMethod
         })
 
         const balanceBefore = existingPlatform?.balance || 0
-        const balanceAfter = balanceBefore + amount
+        const balanceAfter = type === "decrease" ? balanceBefore - amount : balanceBefore + amount
 
         
 

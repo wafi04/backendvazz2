@@ -135,8 +135,26 @@ if (transactionFilters.endDate) {
 
             const transaction = await prisma.transaction.findUnique({
                 where: whereClause,
-                include: {
-                    payment: true,
+                select : {
+                    updatedAt : true,
+                    createdAt : true,
+                    message : true,
+                    orderId : true,
+                    price : true,
+                    status : true,
+                    serialNumber : true,
+                    serviceName : true,
+                    username : true,
+                    userId : true,
+                    zone : true,
+                    nickname : true,
+                    payment : {
+                        select : {
+                            method : true,
+                            paymentNumber : true,
+                            status : true
+                        }
+                    }
                 }
             });
 

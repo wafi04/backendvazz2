@@ -5,7 +5,6 @@ import { adminMiddleware, authMiddleware } from "../middleware/auth";
 const balanceService = new BalanceService()
 const balanceRoute = new Hono()
 
-// GET /balance - Get all active platform balances
 balanceRoute.get('/',authMiddleware,adminMiddleware, async (c) => {
     try {
         const balances = await balanceService.findAll()
@@ -23,7 +22,6 @@ balanceRoute.get('/',authMiddleware,adminMiddleware, async (c) => {
     }
 })
 
-// GET /balance/:id - Get balance by ID with histories
 balanceRoute.get('/:id',authMiddleware,adminMiddleware, async (c) => {
     try {
         const id = parseInt(c.req.param('id'))
