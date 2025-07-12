@@ -75,7 +75,8 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                 );                
                 
                 let priceAmount: number = Math.round(calculatePricing.price);
-                let totalAmount: number = calculatePricing.price;
+                let totalAmount: number =  Math.round(calculatePricing.price);
+                let priceDuitku : number | null
                 let fee: number = 0;
                 let feeRupiah: number = 0;
                 let discountAmount = 0;
@@ -103,7 +104,7 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                         user?.username,
                         user?.whatsapp as string
                     );
-
+                    priceAmount = validated.finalAmount
                     discountAmount = validated.discountAmount;
                     totalAmount = validated.finalAmount;
                 }
@@ -166,11 +167,11 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                 totalAmount = method.totalAmount;
                 fee =  methodCode === "NQ" ? 0.007 : 0;
                 feeRupiah = method.taxAmount;
-                profitAmount = calculatePricing.profitRupiah - method.taxAmount;
+                profitAmount = calculatePricing.profitRupiah - method.taxAmount
 
                 // Create Duitku transaction
                 const toDuitku = await duitku.CreateTransaction({
-                    paymentAmount: Math.max(totalAmount, 0),
+                    paymentAmount: Math.max(priceAmount, 0),
                     paymentCode: methodCode,
                     merchantOrderId: orderId,
                     productDetails: product.serviceName,
@@ -234,6 +235,7 @@ export async function OrderTransactions(data: CreateOrderTransaction) {
                         status: TRANSACTION_FLOW.PENDING,
                         log: JSON.stringify(log),
                         discount: discountAmount,
+                        priceDuitku : priceAmount - feeRupiah,
                         purchasePrice: product.priceFromDigi,
                         nickname,
                         orderId : payment.orderId,

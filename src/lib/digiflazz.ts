@@ -67,7 +67,6 @@ export class Digiflazz {
       } else  {
         customerNo = userId;
       } 
-      console.log(topUpData.productCode)
       const data = {
         username: this.username,
         buyer_sku_code: "CHECKIDS",

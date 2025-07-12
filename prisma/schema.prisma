@@ -188,6 +188,7 @@ model Service {
     nickname          String?  @map("nickname") @db.VarChar(100)
     serviceName       String   @map("service_name") @db.VarChar(300)
     price             Int      @map("price")
+    priceDuitku       Int?     @map("price_duitku") 
     profit            Int      @map("profit")
     message           String?  @map("message") @db.Text
     profitAmount      Int      @map("profit_amount")
@@ -227,6 +228,8 @@ model Service {
     userId              String  @map("user_id") @db.VarChar(50)
     nickname            String? @map("nickname") @db.VarChar(100)
     price               Int
+    pricePurchase       Int?   @map("price_purchase")
+    priceDuitku         Int?   @map("price_duitku") 
     profitAmount        Int     @map("profit_amount")
     profit              Int
     zone                String? @db.VarChar(50)

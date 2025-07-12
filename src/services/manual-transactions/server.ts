@@ -3,179 +3,117 @@ import { Digiflazz } from "../../lib/digiflazz";
 import { prisma } from "../../lib/prisma";
 
 export class ManualTransactions {
-    async Create({
-        data,
-    }: {
-        data: {
-            orderId: string;
-            createdBy: string;
-            reason: string;
-            whatsapp: string;
-            userId: string;
-            nickname: string;
-            zone: string;
-            productCode: string;
-            productName: string;
-            price: number;
-            profit: number;
-            profitAmount: number;
-        };
-    }) {
-        const {
-            orderId,
-            createdBy,
-            reason,
-            whatsapp,
-            userId,
-            nickname,
-            zone,
-            productCode,
-            productName,
-            price,
-            profit,
-            profitAmount,
-        } = data;
-
+async Create({
+    data,
+}: {
+    data: {
+        orderId: string;
+        createdBy: string;
+        reason: string;
+    };
+}) {
     const digiflazz = new Digiflazz(DIGI_USERNAME, DIGI_KEY);
-        
-        if (!orderId) {
-            throw new Error("Order ID is required");
-        }
-        if (!data) {
-            throw new Error("Data is required");
-        }
-
-        try {
-            return await prisma.$transaction(async (tx) => {
-                // 1. Cek apakah order ID ada di transactions table
-                const transactionCheckQuery = `
-                    SELECT 
-                        order_id, 
-                        provider_order_id, 
-                        user_id, 
-                        zone, 
-                        ref_id,
-                        service_name,
-                        price,
-                        profit,
-                        profit_amount
-                    FROM transactions 
-                    WHERE order_id = $1
-                `;
-                
-                const transactionResult = await tx.$queryRawUnsafe(transactionCheckQuery, orderId) as any[];
-                
-                if (!transactionResult || transactionResult.length === 0) {
-                    throw new Error("Order ID not found in transactions");
-                }
-                
-                const transaction = transactionResult[0];
-                
-                // 2. Generate manual transaction ID
-                const manualTransactionId = `RE${orderId}`;
-                
-                // 3. Insert ke manual_transaction table
-                const insertManualTransactionQuery = `
-                    INSERT INTO manual_transaction (
-                        order_id,
-                        manual_transaction_id,
-                        user_id,
-                        nickname,
-                        price,
-                        profit_amount,
-                        profit,
-                        zone,
-                        whatsapp,
-                        product_name,
-                        created_by,
-                        reason,
-                        status,
-                        created_at,
-                        updated_at
-                    ) VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW()
-                    )
-                    RETURNING id, manual_transaction_id, status
-                `;
-                
-                const insertResult = await tx.$queryRawUnsafe(
-                    insertManualTransactionQuery,
-                    orderId,
-                    manualTransactionId,
-                    userId,
-                    nickname,
-                    price || transaction.price,
-                    profitAmount || transaction.profit_amount,
-                    profit || transaction.profit,
-                    zone || transaction.zone,
-                    whatsapp,
-                    productName,
-                    createdBy,
-                    reason,
-                    "PENDING"
-                ) as any[];
-                
-                const newManualTransaction = insertResult[0];
-                
-                // 4. Call Digiflazz API (assuming you have this import)
-                const toDigi = await digiflazz.TopUp({
-                    productCode: transaction.provider_order_id as string,
-                    userId: transaction.user_id as string,
-                    reference: transaction.ref_id as string,
-                    serverId: transaction.zone ?? "",
-                });
-                
-                // 5. Update status to PAID if successful
-                if (toDigi && toDigi.data) {
-                    // 5. Update status to PAID if successful
-                    const updateSuccessQuery = `
-                        UPDATE manual_transaction 
-                        SET status = $1, updated_at = NOW() 
-                        WHERE id = $2
-                        RETURNING *
-                    `;
-                    
-                    const updatedTransaction = await tx.$queryRawUnsafe(
-                        updateSuccessQuery,
-                        "PAID",
-                        newManualTransaction.id
-                    ) as any[];
-                    
-                    return {
-                        message: "Manual transaction created successfully",
-                        statusCode: 201,
-                        success: true,
-                        data: updatedTransaction[0],
-                    };
-                } else {
-                    // 6. Update status to FAILED if API call fails
-                    const updateFailedQuery = `
-                        UPDATE manual_transaction 
-                        SET status = $1, updated_at = NOW() 
-                        WHERE id = $2
-                        RETURNING *
-                    `;
-                    
-                    const failedTransaction = await tx.$queryRawUnsafe(
-                        updateFailedQuery,
-                        "FAILED",
-                        newManualTransaction.id
-                    ) as any[];
-                    
-                    return {
-                        message: "Failed to process manual transaction",
-                        success: false,
-                        statusCode: 400,
-                        data: failedTransaction[0],
-                    };
-                }
-            });
-        } catch (error) {
-            console.error('Manual transaction error:', error);
-            throw error;
-        }
+    
+    if (!data.orderId) {
+        throw new Error("Order ID is required");
     }
 
+    try {
+        return await prisma.$transaction(async (tx) => {
+            // 1. Cek apakah order ID ada di transactions table
+            const transaction = await tx.transaction.findUnique({
+                where: {
+                    orderId: data.orderId
+                },
+                select: {
+                    orderId: true,
+                    providerOrderId: true,
+                    userId: true,
+                    zone: true,
+                    refId: true,
+                    serviceName: true,
+                    priceDuitku : true,
+                    price: true,
+                    profit: true,
+                    profitAmount: true,
+                    nickname: true,
+                    username: true,
+                    payment : {
+                        select : {
+                            buyerNumber : true,
+                            totalAmount : true,
+                        }
+                    }
+                }
+            });
+
+            
+            if (!transaction) {
+                throw new Error("Order ID not found in transactions");
+            }
+            
+            // 2. Generate manual transaction ID
+            const manualTransactionId = `RE${data.orderId}`;
+
+            // 3. Call Digiflazz API untuk check ID
+            const toDigi = await digiflazz.TopUp({
+                productCode: transaction.providerOrderId as string,
+                userId: transaction.userId as string,
+                reference : manualTransactionId as string,
+                serverId: transaction.zone ?? "",
+            });
+            let newManualTransaction
+
+            // 4. Insert ke manual_transaction table
+            if (toDigi && toDigi.data) {
+                newManualTransaction = await tx.manualTransaction.create({
+                    data: {
+                        orderId: data.orderId,
+                        manualTransactionId: manualTransactionId,
+                        userId: transaction.userId  as string,
+                        nickname: transaction.nickname,
+                        price: toDigi.data.price,
+                        profitAmount: (transaction.priceDuitku ?? 0) - toDigi.data.price,
+                        profit: transaction.profit,
+                        zone: transaction.zone,
+                        whatsapp: transaction.payment?.buyerNumber || "", 
+                        productName: transaction.serviceName,
+                        createdBy: data.createdBy,
+                        reason: data.reason,
+                        status: "PROCESS"
+                    }
+                });
+
+                await tx.transaction.update({
+                    where : {
+                        orderId : data.orderId
+                    },
+                    data : {
+                        profitAmount : (transaction.priceDuitku ?? 0) - toDigi.data.price,
+                        purchasePrice : toDigi.data.price,
+                        refId : manualTransactionId,
+                        isReOrder : "active",
+                        log : JSON.stringify(toDigi.data)
+                    }
+                })
+                return {
+                    message: "Manual transaction created successfully",
+                    statusCode: 201,
+                    success: true,
+                    data: newManualTransaction,
+                };
+            } 
+            return {
+                message: "Failed to process manual transaction",
+                success: false,
+                statusCode: 400,
+            };
+        });
+    } catch (error) {
+        console.error('Manual transaction error:', error);
+        throw error;
+    }
+}
     // Additional method to get manual transaction by ID
     async GetById(id: number) {
         try {
@@ -231,6 +169,12 @@ export class ManualTransactions {
             if (createdBy) {
                 whereConditions.push(`mt.created_by = $${paramIndex}`);
                 params.push(createdBy);
+                paramIndex++;
+            }
+
+             if (search) {
+                whereConditions.push(`mt.order_id = $${paramIndex}`);
+                params.push(search);
                 paramIndex++;
             }
 

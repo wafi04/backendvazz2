@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { validator } from "hono/validator";
 import { registerSchema,loginSchema} from "../validation/user";
-import { adminMiddleware, authHelpers, authMiddleware } from "../middleware/auth";
+import { adminMiddleware, authHelpers, authMiddleware, refreshMiddleware } from "../middleware/auth";
 import { AuthService } from "../services/users/auth";
 import { createErrorResponse } from "../utils/response";
 import { getUserAgent } from "../utils/cleintInfo";
@@ -266,10 +266,9 @@ authRoutes.post("/logout", authMiddleware, async (c) => {
   }
 });
 
-authRoutes.post("/refresh", authMiddleware, async (c) => {
+authRoutes.post("/refresh", refreshMiddleware, async (c) => {
   try {
-    const user = c.get("jwtPayload") as { username: string; role: string, sessionId: string }
-
+    const user = c.get("sessionData") as { username: string; role: string, sessionId: string }
     const token = await authService.RefreshToken(user.username, user.role, user.sessionId);
     authHelpers.setAccessTokenCookie(c, token.token.accessToken);
 

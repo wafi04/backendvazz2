@@ -88,18 +88,25 @@ transaction.get("/invoice/:orderId", async (c) => {
 });
 
 
-transaction.post("/retransactions", authMiddleware, adminMiddleware, async (c) => {
+transaction.post("/retransaction", authMiddleware, adminMiddleware, async (c) => {
     try {
         const req = await c.req.json();
-        const result = await manualTransactons.Create(req)
+        const result = await manualTransactons.Create({
+            data : {
+                createdBy : req.createdBy,
+                reason : req.reason,
+                orderId : req.orderId
+            }
+        })
         return c.json({
             success: true,
             message: "Transaction created successfully",
-            data: result
+            data: result.data
         });
     } catch (error) {
+        console.log(error)
         return c.json({
-            success: true,
+            success: false,
             message: "Transaction failed successfully",
         });
     }

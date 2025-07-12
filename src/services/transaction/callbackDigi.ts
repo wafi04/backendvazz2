@@ -47,7 +47,6 @@ export class DigiflazzCallbackService {
         };
       }
 
-      console.log(callbackData.data ?? callbackData);
 
       const { ref_id, status, message, sn } = callbackData.data;
 
@@ -83,6 +82,7 @@ export class DigiflazzCallbackService {
               id: true,
               orderId: true,
               username: true,
+              priceDuitku : true,
               successReportSent: true,
               price: true,
               payment: {
@@ -149,11 +149,29 @@ export class DigiflazzCallbackService {
             },
           });
 
+
           if (purchaseStatus === "SUCCESS" && pembelian.successReportSent !== "DONE") {
             await tx.transaction.update({
               where: { id: pembelian.id },
               data: { successReportSent: "DONE" },
             });
+            const manual = await tx.manualTransaction.findFirst({
+              where : {
+                manualTransactionId : ref_id
+              }
+            })
+            if(manual){
+              await tx.manualTransaction.update({
+                where : {
+                  id : manual.id
+              },
+              data : {
+                  status: purchaseStatus,
+                  serialNumber: sn || null,
+                  updatedAt: new Date(),
+              }
+            })
+          }
           }
 
           return {

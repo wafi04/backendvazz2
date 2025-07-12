@@ -58,9 +58,10 @@ export async function ValidationMethodPayment({
     // Hitung pajak
     let taxAmount = 0;
     if (method.code === "NQ") {
-      taxAmount = Math.round(amount * 0.007); // 0.7% = 0.007
+      taxAmount = Math.round(amount * 0.007); 
     } else if (method.taxAdmin) {
-    }
+      taxAmount = 0
+    } 
 
     const totalAmount = Math.round(amount + taxAmount);
 
